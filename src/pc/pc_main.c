@@ -551,6 +551,8 @@ static void web_main_loop_iteration(void) {
         djui_ctx_display_update();
 #endif
         djui_lua_profiler_update();
+        // Mods anadidos desde el navegador: se importan aqui, en el bucle normal.
+        web_add_files_process();
     }
 
     // Si el fotograma se ha pasado de largo, tampoco acumulamos deuda.
@@ -559,7 +561,7 @@ static void web_main_loop_iteration(void) {
 
     // [temporal] comprobacion del ritmo real del juego en el navegador
     if (after >= sLoggedAt + 5.0) {
-        printf("[web-ritmo] %.1f iteraciones/s (objetivo %d)\n", (double)sTicksLogged / (after - sLoggedAt), FRAMERATE);
+        printf("[web-fps] %.1f iterations/s (target %d)\n", (double)sTicksLogged / (after - sLoggedAt), FRAMERATE);
         fflush(stdout);
         sTicksLogged = 0;
         sLoggedAt = after;
@@ -600,7 +602,7 @@ static void web_copy_bundled_rom(void) {
     }
     fclose(origen);
     fclose(copia);
-    printf("[web] rom incrustado copiado a %s\n", destino);
+    printf("[web] bundled rom copied to %s\n", destino);
     fflush(stdout);
 }
 #endif

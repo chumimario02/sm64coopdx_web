@@ -12,6 +12,14 @@
 #include <time.h>
 #include <float.h>
 #include <sys/stat.h>
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#include <dirent.h>
+#include "pc/mods/mod_import.h"
+#include "pc/mods/mods.h"
+#include "pc/mods/mods_utils.h"
+#include "pc/djui/djui_popup.h"
+#endif
 #if defined(_WIN32) || defined(_WIN64)
 #include <windows.h>
 #include <direct.h>
@@ -635,7 +643,16 @@ static s8 launch(const char* program, const char* arg) {
 
 
 void open_url(const char* url) {
-#if defined(_WIN32) || defined(_WIN64) // windows
+#ifdef __EMSCRIPTEN__
+    // Web port: there is no system browser to launch, so open a new tab. This
+    // is what the game's "browse mods"/website buttons do in a browser.
+    EM_ASM({
+        try { window.open(UTF8ToString($0), '_blank', 'noopener'); }
+        catch (e) { console.log('[web] could not open the link: ' + e); }
+    }, url);
+    return;
+
+#elif defined(_WIN32) || defined(_WIN64) // windows
     ShellExecuteA(NULL, "open", url, NULL, NULL, SW_SHOWNORMAL);
 
 #elif __linux__ // linux
@@ -647,7 +664,187 @@ void open_url(const char* url) {
 #endif
 }
 
+#ifdef __EMSCRIPTEN__
+// ---------------------------------------------------------------------------
+// Browser: there are no system folders to open, so the "open folder" buttons
+// (mods, dynos, saves...) become "add files to that folder". The page
+// (web/pre.js) shows a picker, copies what was chosen into the game filesystem
+// (which lives in IndexedDB, that is, on the player's own PC) and calls
+// web_add_files_done() when it is done.
+//
+// Files the game knows how to import (mods .zip and .lua, palettes .ini) are
+// handed to its own importer, mod_import_file(), the very same one used by
+// desktop drag and drop.
+// ---------------------------------------------------------------------------
+#define WEB_ADD_STAGING "_web_add"
+
+static char sWebAddDestino[SYS_MAX_PATH] = { 0 };
+static bool sWebAddPendiente = false;
+
+static bool web_es_punto(const char* nombre) {
+    return nombre[0] == '.' && (nombre[1] == 0 || (nombre[1] == '.' && nombre[2] == 0));
+}
+
+static void web_copiar_archivo(const char* src, const char* dst) {
+    FILE* origen = fopen(src, "rb");
+    if (origen == NULL) { return; }
+
+    FILE* copia = fopen(dst, "wb");
+    if (copia == NULL) { fclose(origen); return; }
+
+    static char bloque[65536];
+    size_t leidos;
+    while ((leidos = fread(bloque, 1, sizeof(bloque), origen)) > 0) {
+        fwrite(bloque, 1, leidos, copia);
+    }
+    fclose(origen);
+    fclose(copia);
+}
+
+static void web_copiar_arbol(const char* src, const char* dst) {
+    DIR* dir = opendir(src);
+    if (dir == NULL) { return; }
+
+    mkdir(dst, 0777);
+
+    struct dirent* entrada;
+    while ((entrada = readdir(dir)) != NULL) {
+        if (web_es_punto(entrada->d_name)) { continue; }
+
+        char hijoOrigen[SYS_MAX_PATH] = { 0 };
+        char hijoDestino[SYS_MAX_PATH] = { 0 };
+        if (snprintf(hijoOrigen, sizeof(hijoOrigen), "%s/%s", src, entrada->d_name) >= (int)sizeof(hijoOrigen)) { continue; }
+        if (snprintf(hijoDestino, sizeof(hijoDestino), "%s/%s", dst, entrada->d_name) >= (int)sizeof(hijoDestino)) { continue; }
+
+        struct stat info;
+        if (stat(hijoOrigen, &info) == 0 && S_ISDIR(info.st_mode)) {
+            web_copiar_arbol(hijoOrigen, hijoDestino);
+        } else {
+            web_copiar_archivo(hijoOrigen, hijoDestino);
+        }
+    }
+    closedir(dir);
+}
+
+static void web_borrar_arbol(const char* ruta) {
+    DIR* dir = opendir(ruta);
+    if (dir != NULL) {
+        struct dirent* entrada;
+        while ((entrada = readdir(dir)) != NULL) {
+            if (web_es_punto(entrada->d_name)) { continue; }
+            char hijo[SYS_MAX_PATH] = { 0 };
+            if (snprintf(hijo, sizeof(hijo), "%s/%s", ruta, entrada->d_name) >= (int)sizeof(hijo)) { continue; }
+            struct stat info;
+            if (stat(hijo, &info) == 0 && S_ISDIR(info.st_mode)) {
+                web_borrar_arbol(hijo);
+            } else {
+                remove(hijo);
+            }
+        }
+        closedir(dir);
+    }
+    rmdir(ruta);
+}
+
+// Called from web/pre.js once it has copied the chosen files into the staging
+// folder. It only sets the flag: the real work happens in
+// web_add_files_process() from the game loop, so DJUI and the mods are touched
+// in the usual context.
+EMSCRIPTEN_KEEPALIVE void web_add_files_done(void) {
+    sWebAddPendiente = true;
+}
+
+void web_add_files_process(void) {
+    if (!sWebAddPendiente) { return; }
+    sWebAddPendiente = false;
+
+    char staging[SYS_MAX_PATH] = { 0 };
+    snprintf(staging, sizeof(staging), "%s", fs_get_write_path(WEB_ADD_STAGING));
+
+    DIR* dir = opendir(staging);
+    if (dir == NULL) {
+        djui_popup_create("Could not read the mods you picked.", 2);
+        return;
+    }
+
+    int carpetas = 0;
+    int archivos = 0;
+    bool huboMod = false;
+
+    struct dirent* entrada;
+    while ((entrada = readdir(dir)) != NULL) {
+        if (web_es_punto(entrada->d_name)) { continue; }
+
+        char ruta[SYS_MAX_PATH] = { 0 };
+        if (snprintf(ruta, sizeof(ruta), "%s/%s", staging, entrada->d_name) >= (int)sizeof(ruta)) { continue; }
+
+        struct stat info;
+        if (stat(ruta, &info) != 0) { continue; }
+
+        if (S_ISDIR(info.st_mode)) {
+            // A plain folder (an already unzipped mod) is copied to the chosen folder.
+            char destino[SYS_MAX_PATH] = { 0 };
+            if (snprintf(destino, sizeof(destino), "%s/%s", sWebAddDestino, entrada->d_name) >= (int)sizeof(destino)) { continue; }
+            web_copiar_arbol(ruta, destino);
+            carpetas++;
+            huboMod = true;
+        } else if (path_ends_with(entrada->d_name, ".zip") || path_ends_with(entrada->d_name, ".lua") ||
+                   path_ends_with(entrada->d_name, ".luac") || path_ends_with(entrada->d_name, ".ini")) {
+            // Mods and palettes: let the game's own importer handle them (it reports back).
+            mod_import_file(ruta);
+            archivos++;
+            huboMod = true;
+        } else {
+            // Anything else (dynos, configs...) is just copied over.
+            char destino[SYS_MAX_PATH] = { 0 };
+            if (snprintf(destino, sizeof(destino), "%s/%s", sWebAddDestino, entrada->d_name) >= (int)sizeof(destino)) { continue; }
+            web_copiar_archivo(ruta, destino);
+            archivos++;
+        }
+    }
+    closedir(dir);
+
+    web_borrar_arbol(staging);
+
+    if (huboMod && carpetas > 0) {
+        mods_refresh_local();
+        mods_update_selectable();
+    }
+
+    if (carpetas + archivos > 0) {
+        char msg[SYS_MAX_PATH];
+        snprintf(msg, sizeof(msg),
+                 "Added %d folder(s) and %d file(s).\nPress Refresh to see them, then reload the page (F5) to activate them.",
+                 carpetas, archivos);
+        djui_popup_create(msg, 3);
+    }
+}
+
+void web_add_files_dialog(const char* destino) {
+    snprintf(sWebAddDestino, sizeof(sWebAddDestino), "%s", destino);
+
+    char staging[SYS_MAX_PATH] = { 0 };
+    snprintf(staging, sizeof(staging), "%s", fs_get_write_path(WEB_ADD_STAGING));
+    mkdir(staging, 0777);
+
+    sWebAddDestino[sizeof(sWebAddDestino) - 1] = 0;
+
+    EM_ASM({
+        if (typeof globalThis.__sm64SubirMods === 'function') {
+            globalThis.__sm64SubirMods(UTF8ToString($0));
+        } else {
+            console.log('[web-mods] the upload helper (web/pre.js) is missing');
+        }
+    }, staging);
+}
+#endif // __EMSCRIPTEN__
+
 void open_folder(const char* path) {
+#ifdef __EMSCRIPTEN__
+    // In a browser there is no "open the folder": ask for the files instead.
+    web_add_files_dialog(path);
+    return;
+#endif
 #if defined(_WIN32) || defined(_WIN64) // windows
     _mkdir(path);
     ShellExecuteA(NULL, "open", path, NULL, NULL, SW_SHOWNORMAL);

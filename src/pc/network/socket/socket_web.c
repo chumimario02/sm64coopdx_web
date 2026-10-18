@@ -93,7 +93,7 @@ EM_JS(int, webnet_js_begin, (int isHost, const char* roomC, const char* relayC),
         ws.binaryType = 'arraybuffer';
         ws.onopen = function () {
             N.status = 'open';
-            console.log('[webnet] relay conectado: ' + N.url);
+            console.log('[webnet] relay connected: ' + N.url);
             // El juego manda su primer datagrama (la peticion de lista de mods)
             // en el mismo instante en que conectamos, sin esperar a que el
             // WebSocket termine de abrir: si lo tiraramos, el host nunca
@@ -105,7 +105,7 @@ EM_JS(int, webnet_js_begin, (int isHost, const char* roomC, const char* relayC),
                     try { ws.send(N.outbox[i]); } catch (e) { break; }
                 }
                 N.outbox.length = 0;
-                console.log('[webnet] enviados ' + pending + ' datagramas que estaban encolados');
+                console.log('[webnet] flushed ' + pending + ' queued datagrams');
             }
             // Solo damos por valido el intento si la conexion aguanta un rato.
             // Asi, si el relay la cierra enseguida (p.ej. sala ocupada), el
@@ -129,10 +129,10 @@ EM_JS(int, webnet_js_begin, (int isHost, const char* roomC, const char* relayC),
                 // de insistir (seguimos jugando en solitario) en vez de pelearnos
                 // por la sala en un bucle de reconexiones.
                 N.role = 0;
-                console.log('[webnet] la sala "' + N.room + '" ya tiene otro host: sigo sin relay');
+                console.log('[webnet] room "' + N.room + '" already has another host: staying without relay');
                 return;
             }
-            retry('cerrado');
+            retry('closed');
         };
         N.ws = ws;
     }
@@ -140,7 +140,7 @@ EM_JS(int, webnet_js_begin, (int isHost, const char* roomC, const char* relayC),
     function retry(why) {
         if (N.role === 0) { return; }
         if (N.tries >= 12) {
-            console.log('[webnet] relay inalcanzable (' + why + '): ' + N.url + ' -> seguimos SIN red (modo solitario)');
+            console.log('[webnet] relay unreachable (' + why + '): ' + N.url + ' -> continuing WITHOUT network (single player mode)');
             return;
         }
         N.tries++;
@@ -148,7 +148,7 @@ EM_JS(int, webnet_js_begin, (int isHost, const char* roomC, const char* relayC),
     }
 
     connect();
-    console.log('[webnet] ' + (isHost ? 'HOST' : 'CLIENTE') + ' sala="' + room + '" url=' + N.url);
+    console.log('[webnet] ' + (isHost ? 'HOST' : 'CLIENT') + ' room="' + room + '" url=' + N.url);
     return 1;
 });
 
@@ -207,7 +207,7 @@ EM_JS(void, webnet_js_close, (int unused), {
         try { N.ws.onclose = null; N.ws.close(); } catch (e) {}
         N.ws = null;
     }
-    console.log('[webnet] relay cerrado');
+    console.log('[webnet] relay closed');
 });
 
 // --------------------- lista de salas (para el menu de unirse) --------------
@@ -232,12 +232,12 @@ EM_JS(void, webnet_js_rooms_fetch, (int unused), {
         .then(function (list) {
             N.rooms = (list || []).map(function (x) { return { room: String(x.room || ""), clients: x.clients | 0 }; });
             N.roomsState = 1;
-            console.log("[webnet] " + N.rooms.length + " salas abiertas en " + N.httpBase);
+            console.log("[webnet] " + N.rooms.length + " open rooms at " + N.httpBase);
         })
         .catch(function (e) {
             N.rooms = [];
             N.roomsState = 2;
-            console.log("[webnet] no pude leer la lista de salas (" + N.httpBase + "): " + e);
+            console.log("[webnet] could not read the room list (" + N.httpBase + "): " + e);
         });
 });
 
@@ -298,7 +298,7 @@ void webnet_begin(int networkType) {
     if (room[0] == '\0') {
         // Sin nombre de sala no hay con quien hablar: seguimos en solitario en
         // vez de abrir una conexion inutil al relay.
-        LOG_INFO("webnet: sin nombre de sala, sigo sin red (modo solitario)");
+        LOG_INFO("webnet: no room name, going without network (single player mode)");
         return;
     }
     webnet_js_begin(isHost, room, "");
@@ -324,7 +324,7 @@ void socket_shutdown(SOCKET socket) {
 }
 
 int webnet_bind(unsigned int port) {
-    LOG_INFO("webnet: bind virtual al puerto %u (sala del relay: '%s')", port, gWebRoomName);
+    LOG_INFO("webnet: virtual bind to port %u (relay room: '%s')", port, gWebRoomName);
     return NO_ERROR;
 }
 
