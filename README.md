@@ -14,6 +14,7 @@ This fork is the upstream desktop port plus a `TARGET_WEB=1` build target and th
 * The full game, rendered through WebGL (the same GLES2/GLSL ES 1.00 shaders as the Raspberry Pi build).
 * The DJUI menus (options, mods list, chat, host/join).
 * **Online multiplayer between browsers**, through the relay in `web/relay/relay.js`.
+* **Touch controls** for phones and tablets.
 * **Your progress is saved in the browser**: saves, mods and `sm64config.txt` survive a page reload.
 * **Mods from the browser**: the "open mods folder" buttons open a file picker, and the game's own importer takes it from there (mods, dynos packs and palettes).
 * A custom loading screen with a PLAY button — the click is what lets the page go fullscreen and start the audio.
@@ -119,8 +120,9 @@ More details of the build and of the deployment in [web/README.md](web/README.md
 * The game runs at a fixed **30 steps per second**, driven by the game and not by the browser's frame rate. A hidden or unfocused tab stops the loop, so keep the game tab visible while playing.
 * Single-threaded and GLES2: it is slower than the desktop build on the same machine.
 * Online play needs the relay; there is no peer-to-peer path.
-* The relay is a dumb forwarder: one host per room name, and everyone in a room receives everyone's packets.
+* The relay is a dumb forwarder with a star topology: one host per room name; clients send their packets to the host, and the host sends to everyone (or to a single client).
 * Tested on desktop Chrome and Edge. Other browsers are untested (keyboard works; a gamepad should work through SDL2, untested).
+* Known bugs: chat on Android and some mods.
 
 ## Credits
 
