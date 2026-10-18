@@ -99,8 +99,6 @@ machine or your LAN, which is exactly what Render needs.
 * The page invites everybody into the public room `coop01`: the *Join* field already
   suggests that name and the room list shows the open rooms of all the players
   (host included), with their player count.
-* Packets larger than `MAX_PAYLOAD` bytes are dropped (the game never sends
-  anything that big).
 * The game page itself has to be reachable by your friends too: put the ROM-less
   build on a static host (Cloudflare Pages, Netlify Drop, GitHub Pages...) and point
   it at the Render relay with `?relay=` (see above). Every player still places their
