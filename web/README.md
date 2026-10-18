@@ -36,16 +36,21 @@ details of the build.
   not break it, and the stick stays analog. It is merged with the keyboard, so
   both can be used at the same time.
 * **Chat and the phone keyboard**: the pad has a **CHAT** button (it opens and
-  closes the chat the same way the chat key does) and a **⌨** button that shows
-  the phone's on-screen keyboard. SDL/Emscripten never creates the editable
-  element Android needs for that, so the page keeps a hidden `<input>` of its
-  own and focuses it on demand (inside the touch gesture, as Android demands).
-  The game reports whether the chat is open (`__sm64touch.chatOpen`) so the
-  keyboard appears and disappears with it. What is typed goes through
-  `__sm64touch.text` (UTF-8 bytes, read in `controller_keyboard.c`) straight
-  into the game's text boxes, instead of through SDL: SDL only accepts text
-  while the game has text input started, and phone keyboards work by
-  composition (IME/autocorrect), where the characters never reach SDL at all.
+  closes the chat the same way the chat key does), a **↵ SEND** button (the same
+  as pressing Enter: it sends the message, and it also works as the A button in
+  the menus) and a **⌨** button that shows the phone's on-screen keyboard, for
+  the chat, the player name and any other text box. SDL/Emscripten never creates
+  the editable element Android needs for that, so the page keeps a hidden
+  `<input>` of its own and focuses it on demand (inside the touch gesture, as
+  Android demands). The game reports whether the chat is open
+  (`__sm64touch.chatOpen`) so the keyboard appears and disappears with it. What
+  is typed goes through `__sm64touch.text` (UTF-8 bytes, read in
+  `controller_keyboard.c`) straight into the game's text boxes, instead of
+  through SDL: SDL only accepts text while the game has text input started, and
+  phone keyboards work by composition (IME/autocorrect), where the characters
+  never reach SDL at all. Enter is taken from the keyboard for the same reason
+  (phone keyboards use it to end the word they are composing) and sent as the
+  `SEND` action.
 * Only the loading screen shows at first; the game takes over once you press PLAY.
 
 ## Build

@@ -49,9 +49,10 @@ EM_JS(int, web_touch_axis, (int which), {
     return r | 0;
 });
 
-// One shot actions (the chat button, for now). The page queues them in
-// globalThis.__sm64touch.actions and the game drains them further down.
+// One shot actions (the chat button and the send key, for now). The page queues
+// them in globalThis.__sm64touch.actions and the game drains them further down.
 #define WEB_TOUCH_ACTION_CHAT 1
+#define WEB_TOUCH_ACTION_SEND 2
 
 EM_JS(int, web_touch_action, (void), {
     var T = globalThis.__sm64touch;
@@ -217,6 +218,12 @@ static void keyboard_read(OSContPad *pad) {
     while (touchAction != 0) {
         if (touchAction == WEB_TOUCH_ACTION_CHAT) {
             djui_chat_box_toggle();
+        } else if (touchAction == WEB_TOUCH_ACTION_SEND) {
+            // Same as pressing Enter: if a text box has the focus (the chat, for
+            // instance) it sends its contents, and in a menu it works as the A
+            // button. Phone keyboards swallow Enter while they are composing a
+            // word, so the page has a button of its own for it.
+            djui_interactable_on_key_down(SCANCODE_ENTER);
         }
         touchAction = web_touch_action();
     }

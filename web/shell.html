@@ -133,6 +133,7 @@
   <div id="stick"><i id="stickKnob"></i></div>
   <div id="extra">
     <button class="btn pill" id="chatBtn" title="Open or close the chat">💬 CHAT</button>
+    <button class="btn pill" id="sendBtn" title="Send the message (Enter)">↵ SEND</button>
     <button class="btn pill" id="kbdBtn" title="Show the on-screen keyboard">⌨</button>
   </div>
   <div id="right">
@@ -492,6 +493,7 @@ function touchSetEnabled(on) {
 // every other text box can be filled in from the phone.
 var elKbd     = document.getElementById('kbd');
 var elChatBtn = document.getElementById('chatBtn');
+var elSendBtn = document.getElementById('sendBtn');
 var elKbdBtn  = document.getElementById('kbdBtn');
 
 var kbdFromChat = false;
@@ -543,6 +545,16 @@ function kbdCollect(ev) {
 function kbdReset() { elKbd.value = ''; kbdLast = ''; }
 
 if (elKbd) {
+  // Phone keyboards often keep Enter for themselves (it just ends the word they
+  // are composing), so it never reaches the game and the message is never sent.
+  // We take it here and queue the "send" action ourselves.
+  elKbd.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter' || ev.code === 'Enter' || ev.code === 'NumpadEnter') {
+      ev.preventDefault();
+      ev.stopPropagation();
+      touchPad.actions.push(2);       // 2 = send (see controller_keyboard.c)
+    }
+  });
   // Let SDL keep its own copy of the text out of the way: the game gets it from
   // the queue above, so nothing is typed twice.
   elKbd.addEventListener('keypress', function (ev) { ev.stopPropagation(); });
@@ -563,6 +575,14 @@ if (elChatBtn) {
     touchPad.actions.push(1);         // 1 = chat (see controller_keyboard.c)
   });
   elChatBtn.addEventListener('contextmenu', function (ev) { ev.preventDefault(); });
+}
+
+if (elSendBtn) {
+  elSendBtn.addEventListener('pointerdown', function (ev) {
+    ev.preventDefault();
+    touchPad.actions.push(2);         // 2 = send: the same as pressing Enter
+  });
+  elSendBtn.addEventListener('contextmenu', function (ev) { ev.preventDefault(); });
 }
 
 if (elKbdBtn) {
