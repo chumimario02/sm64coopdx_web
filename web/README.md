@@ -36,7 +36,7 @@ details of the build.
   not break it, and the stick stays analog. It is merged with the keyboard, so
   both can be used at the same time.
 * **Chat and the phone keyboard**: the pad has a **CHAT** button (it opens and
-  closes the chat the same way the chat key does), a **↵ SEND** button (the same
+  closes the chat the same way the chat key does), an **ENTER** button (the same
   as pressing Enter: it sends the message, and it also works as the A button in
   the menus) and a **⌨** button that shows the phone's on-screen keyboard, for
   the chat, the player name and any other text box. SDL/Emscripten never creates
