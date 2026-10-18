@@ -111,7 +111,7 @@ The build is a **wasm64** one (`-m64`, MEMORY64): the pre-compressed sound blobs
 
 The web build uses `-sINVOKE_RUN=0`: `main()` does not start on its own. The PLAY button calls it once IndexedDB has been mounted and read (mounting it is asynchronous).
 
-More notes, in Spanish, in [web/LEEME.md](web/LEEME.md).
+More details of the build and of the deployment in [web/README.md](web/README.md).
 
 ## Known limitations
 

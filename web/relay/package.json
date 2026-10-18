@@ -1,7 +1,7 @@
 {
   "name": "sm64coopdx-web-relay",
   "version": "1.0.0",
-  "description": "Relay WebSocket para el port web de sm64coopdx (multijugador solo navegadores)",
+  "description": "WebSocket relay for the sm64coopdx web port (multiplayer between browsers only)",
   "main": "relay.js",
   "scripts": {
     "start": "node relay.js"

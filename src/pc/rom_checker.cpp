@@ -81,9 +81,9 @@ static bool is_rom_valid(const std::string romPath) {
 }
 
 inline static bool scan_path_for_rom(const char *dir) {
-    // Un directorio vacio o inexistente no debe lanzar excepcion: Emscripten compila
-    // sin excepciones C++ (un throw equivale a abort). Ademas en el navegador
-    // sys_exe_path_dir() devuelve "" porque no existe /proc/self/exe.
+    // An empty or non-existent directory must not throw: Emscripten compiles
+    // without C++ exceptions (a throw is the same as an abort). On top of that, in
+    // a browser sys_exe_path_dir() returns "" because there is no /proc/self/exe.
     if (dir == NULL || dir[0] == '\0') { return false; }
 
     std::error_code ec;

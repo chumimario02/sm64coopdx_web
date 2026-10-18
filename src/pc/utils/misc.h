@@ -40,8 +40,8 @@ void str_seperator_concat(char *output_buffer, int buffer_size, char** strings, 
 void open_url(const char* url);
 void open_folder(const char* path);
 #ifdef __EMSCRIPTEN__
-// Port a web: el boton de "abrir carpeta" pide los archivos desde la pagina y
-// aqui se procesan (ver web/pre.js y web/shell.html).
+// Web port: the "open folder" button asks the page for the files and they are
+// processed here (see web/pre.js and web/shell.html).
 void web_add_files_process(void);
 #endif
 const char *strstr_lowercased(const char *haystack, const char *needle);

@@ -117,9 +117,9 @@ bool clock_is_date(u8 month, u8 day) {
 // busy-waiting is bad practice but it's very accurate so we use a hybrid
 void precise_delay_f64(f64 delaySec) {
 #ifdef __EMSCRIPTEN__
-    // En el navegador no podemos dormir el hilo: el ritmo lo lleva el bucle
-    // principal (web_main_loop_iteration en pc_main.c). Esperar aqui solo
-    // quemaria CPU y congelaria la pestana.
+    // We cannot sleep the thread in a browser: the pace is set by the main loop
+    // (web_main_loop_iteration in pc_main.c). Waiting here would only burn CPU
+    // and freeze the tab.
     (void)delaySec;
 #else
     const f64 sleepMargin = 0.002; // 2 ms margin before we switch to busy-waiting
@@ -678,72 +678,72 @@ void open_url(const char* url) {
 // ---------------------------------------------------------------------------
 #define WEB_ADD_STAGING "_web_add"
 
-static char sWebAddDestino[SYS_MAX_PATH] = { 0 };
-static bool sWebAddPendiente = false;
+static char sWebAddDest[SYS_MAX_PATH] = { 0 };
+static bool sWebAddPending = false;
 
-static bool web_es_punto(const char* nombre) {
-    return nombre[0] == '.' && (nombre[1] == 0 || (nombre[1] == '.' && nombre[2] == 0));
+static bool web_is_dot(const char* name) {
+    return name[0] == '.' && (name[1] == 0 || (name[1] == '.' && name[2] == 0));
 }
 
-static void web_copiar_archivo(const char* src, const char* dst) {
-    FILE* origen = fopen(src, "rb");
-    if (origen == NULL) { return; }
+static void web_copy_file(const char* src, const char* dst) {
+    FILE* in = fopen(src, "rb");
+    if (in == NULL) { return; }
 
-    FILE* copia = fopen(dst, "wb");
-    if (copia == NULL) { fclose(origen); return; }
+    FILE* out = fopen(dst, "wb");
+    if (out == NULL) { fclose(in); return; }
 
-    static char bloque[65536];
-    size_t leidos;
-    while ((leidos = fread(bloque, 1, sizeof(bloque), origen)) > 0) {
-        fwrite(bloque, 1, leidos, copia);
+    static char chunk[65536];
+    size_t readBytes;
+    while ((readBytes = fread(chunk, 1, sizeof(chunk), in)) > 0) {
+        fwrite(chunk, 1, readBytes, out);
     }
-    fclose(origen);
-    fclose(copia);
+    fclose(in);
+    fclose(out);
 }
 
-static void web_copiar_arbol(const char* src, const char* dst) {
+static void web_copy_tree(const char* src, const char* dst) {
     DIR* dir = opendir(src);
     if (dir == NULL) { return; }
 
     mkdir(dst, 0777);
 
-    struct dirent* entrada;
-    while ((entrada = readdir(dir)) != NULL) {
-        if (web_es_punto(entrada->d_name)) { continue; }
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (web_is_dot(entry->d_name)) { continue; }
 
-        char hijoOrigen[SYS_MAX_PATH] = { 0 };
-        char hijoDestino[SYS_MAX_PATH] = { 0 };
-        if (snprintf(hijoOrigen, sizeof(hijoOrigen), "%s/%s", src, entrada->d_name) >= (int)sizeof(hijoOrigen)) { continue; }
-        if (snprintf(hijoDestino, sizeof(hijoDestino), "%s/%s", dst, entrada->d_name) >= (int)sizeof(hijoDestino)) { continue; }
+        char srcChild[SYS_MAX_PATH] = { 0 };
+        char dstChild[SYS_MAX_PATH] = { 0 };
+        if (snprintf(srcChild, sizeof(srcChild), "%s/%s", src, entry->d_name) >= (int)sizeof(srcChild)) { continue; }
+        if (snprintf(dstChild, sizeof(dstChild), "%s/%s", dst, entry->d_name) >= (int)sizeof(dstChild)) { continue; }
 
         struct stat info;
-        if (stat(hijoOrigen, &info) == 0 && S_ISDIR(info.st_mode)) {
-            web_copiar_arbol(hijoOrigen, hijoDestino);
+        if (stat(srcChild, &info) == 0 && S_ISDIR(info.st_mode)) {
+            web_copy_tree(srcChild, dstChild);
         } else {
-            web_copiar_archivo(hijoOrigen, hijoDestino);
+            web_copy_file(srcChild, dstChild);
         }
     }
     closedir(dir);
 }
 
-static void web_borrar_arbol(const char* ruta) {
-    DIR* dir = opendir(ruta);
+static void web_delete_tree(const char* path) {
+    DIR* dir = opendir(path);
     if (dir != NULL) {
-        struct dirent* entrada;
-        while ((entrada = readdir(dir)) != NULL) {
-            if (web_es_punto(entrada->d_name)) { continue; }
-            char hijo[SYS_MAX_PATH] = { 0 };
-            if (snprintf(hijo, sizeof(hijo), "%s/%s", ruta, entrada->d_name) >= (int)sizeof(hijo)) { continue; }
+        struct dirent* entry;
+        while ((entry = readdir(dir)) != NULL) {
+            if (web_is_dot(entry->d_name)) { continue; }
+            char child[SYS_MAX_PATH] = { 0 };
+            if (snprintf(child, sizeof(child), "%s/%s", path, entry->d_name) >= (int)sizeof(child)) { continue; }
             struct stat info;
-            if (stat(hijo, &info) == 0 && S_ISDIR(info.st_mode)) {
-                web_borrar_arbol(hijo);
+            if (stat(child, &info) == 0 && S_ISDIR(info.st_mode)) {
+                web_delete_tree(child);
             } else {
-                remove(hijo);
+                remove(child);
             }
         }
         closedir(dir);
     }
-    rmdir(ruta);
+    rmdir(path);
 }
 
 // Called from web/pre.js once it has copied the chosen files into the staging
@@ -751,12 +751,12 @@ static void web_borrar_arbol(const char* ruta) {
 // web_add_files_process() from the game loop, so DJUI and the mods are touched
 // in the usual context.
 EMSCRIPTEN_KEEPALIVE void web_add_files_done(void) {
-    sWebAddPendiente = true;
+    sWebAddPending = true;
 }
 
 void web_add_files_process(void) {
-    if (!sWebAddPendiente) { return; }
-    sWebAddPendiente = false;
+    if (!sWebAddPending) { return; }
+    sWebAddPending = false;
 
     char staging[SYS_MAX_PATH] = { 0 };
     snprintf(staging, sizeof(staging), "%s", fs_get_write_path(WEB_ADD_STAGING));
@@ -767,71 +767,71 @@ void web_add_files_process(void) {
         return;
     }
 
-    int carpetas = 0;
-    int archivos = 0;
-    bool huboMod = false;
+    int folders = 0;
+    int files = 0;
+    bool gotMod = false;
 
-    struct dirent* entrada;
-    while ((entrada = readdir(dir)) != NULL) {
-        if (web_es_punto(entrada->d_name)) { continue; }
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (web_is_dot(entry->d_name)) { continue; }
 
-        char ruta[SYS_MAX_PATH] = { 0 };
-        if (snprintf(ruta, sizeof(ruta), "%s/%s", staging, entrada->d_name) >= (int)sizeof(ruta)) { continue; }
+        char path[SYS_MAX_PATH] = { 0 };
+        if (snprintf(path, sizeof(path), "%s/%s", staging, entry->d_name) >= (int)sizeof(path)) { continue; }
 
         struct stat info;
-        if (stat(ruta, &info) != 0) { continue; }
+        if (stat(path, &info) != 0) { continue; }
 
         if (S_ISDIR(info.st_mode)) {
             // A plain folder (an already unzipped mod) is copied to the chosen folder.
-            char destino[SYS_MAX_PATH] = { 0 };
-            if (snprintf(destino, sizeof(destino), "%s/%s", sWebAddDestino, entrada->d_name) >= (int)sizeof(destino)) { continue; }
-            web_copiar_arbol(ruta, destino);
-            carpetas++;
-            huboMod = true;
-        } else if (path_ends_with(entrada->d_name, ".zip") || path_ends_with(entrada->d_name, ".lua") ||
-                   path_ends_with(entrada->d_name, ".luac") || path_ends_with(entrada->d_name, ".ini")) {
+            char dest[SYS_MAX_PATH] = { 0 };
+            if (snprintf(dest, sizeof(dest), "%s/%s", sWebAddDest, entry->d_name) >= (int)sizeof(dest)) { continue; }
+            web_copy_tree(path, dest);
+            folders++;
+            gotMod = true;
+        } else if (path_ends_with(entry->d_name, ".zip") || path_ends_with(entry->d_name, ".lua") ||
+                   path_ends_with(entry->d_name, ".luac") || path_ends_with(entry->d_name, ".ini")) {
             // Mods and palettes: let the game's own importer handle them (it reports back).
-            mod_import_file(ruta);
-            archivos++;
-            huboMod = true;
+            mod_import_file(path);
+            files++;
+            gotMod = true;
         } else {
             // Anything else (dynos, configs...) is just copied over.
-            char destino[SYS_MAX_PATH] = { 0 };
-            if (snprintf(destino, sizeof(destino), "%s/%s", sWebAddDestino, entrada->d_name) >= (int)sizeof(destino)) { continue; }
-            web_copiar_archivo(ruta, destino);
-            archivos++;
+            char dest[SYS_MAX_PATH] = { 0 };
+            if (snprintf(dest, sizeof(dest), "%s/%s", sWebAddDest, entry->d_name) >= (int)sizeof(dest)) { continue; }
+            web_copy_file(path, dest);
+            files++;
         }
     }
     closedir(dir);
 
-    web_borrar_arbol(staging);
+    web_delete_tree(staging);
 
-    if (huboMod && carpetas > 0) {
+    if (gotMod && folders > 0) {
         mods_refresh_local();
         mods_update_selectable();
     }
 
-    if (carpetas + archivos > 0) {
+    if (folders + files > 0) {
         char msg[SYS_MAX_PATH];
         snprintf(msg, sizeof(msg),
                  "Added %d folder(s) and %d file(s).\nPress Refresh to see them, then reload the page (F5) to activate them.",
-                 carpetas, archivos);
+                 folders, files);
         djui_popup_create(msg, 3);
     }
 }
 
-void web_add_files_dialog(const char* destino) {
-    snprintf(sWebAddDestino, sizeof(sWebAddDestino), "%s", destino);
+void web_add_files_dialog(const char* dest) {
+    snprintf(sWebAddDest, sizeof(sWebAddDest), "%s", dest);
 
     char staging[SYS_MAX_PATH] = { 0 };
     snprintf(staging, sizeof(staging), "%s", fs_get_write_path(WEB_ADD_STAGING));
     mkdir(staging, 0777);
 
-    sWebAddDestino[sizeof(sWebAddDestino) - 1] = 0;
+    sWebAddDest[sizeof(sWebAddDest) - 1] = 0;
 
     EM_ASM({
-        if (typeof globalThis.__sm64SubirMods === 'function') {
-            globalThis.__sm64SubirMods(UTF8ToString($0));
+        if (typeof globalThis.__sm64AddFiles === 'function') {
+            globalThis.__sm64AddFiles(UTF8ToString($0));
         } else {
             console.log('[web-mods] the upload helper (web/pre.js) is missing');
         }

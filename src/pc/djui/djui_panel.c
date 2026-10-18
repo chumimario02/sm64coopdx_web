@@ -138,9 +138,9 @@ void djui_panel_back(void) {
 
 void djui_panel_update(void) {
 #ifdef TARGET_WEB
-    // refresco asincrono de la lista de salas del panel de "unirse". Se hace
-    // aqui (y no al dibujar) para no tocar el arbol de elementos en mitad del
-    // renderizado, lo que bloquea el juego.
+    // asynchronous refresh of the room list of the "join" panel. It is done here
+    // (and not while drawing) so the element tree is not touched in the middle of
+    // rendering, which would block the game.
     {
         extern void djui_panel_join_direct_poll(void);
         djui_panel_join_direct_poll();

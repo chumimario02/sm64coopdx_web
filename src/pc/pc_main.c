@@ -30,10 +30,10 @@
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
-// Marca de arranque para depurar el port a web. Ya NO toca el titulo de la
-// pestana (la pantalla de carga propia lo usa): solo actualiza un contador que
-// se puede leer desde la consola del navegador con  window.__sm64boot
-// (OJO: el cuerpo de EM_ASM es JavaScript, no C: nada de "(int)")
+// Boot marker to debug the web port. It NO LONGER touches the tab title (the
+// custom loading screen owns it): it only updates a counter that can be read
+// from the browser console with  window.__sm64boot
+// (NOTE: the body of EM_ASM is JavaScript, not C: no "(int)" in there)
 #define WEBBOOT(n) EM_ASM({ if (typeof globalThis.__sm64boot !== 'undefined') { globalThis.__sm64boot = $0 | 0; } }, (int)(n))
 #else
 #define WEBBOOT(n) do { } while (0)
@@ -512,10 +512,10 @@ void* main_game_init(UNUSED void* dummy) {
 }
 
 #ifdef __EMSCRIPTEN__
-// El motor avanza su reloj 1/30 s por iteracion, y en el navegador no se puede
-// bloquear el hilo para esperar. Aqui contamos cuantas iteraciones pide el reloj
-// real: da igual si el navegador nos llama a 60, 120 o 144 Hz (o por temporizador),
-// el juego avanza siempre a FRAMERATE pasos por segundo.
+// The engine advances its clock 1/30 s per iteration, and in a browser the thread
+// cannot be blocked to wait. Here we count how many iterations the real clock asks
+// for: it does not matter whether the browser calls us at 60, 120 or 144 Hz (or
+// through a timer), the game always advances at FRAMERATE steps per second.
 static void web_main_loop_iteration(void) {
     static f64 sNextTick = -1.0;
     static u32 sTicksLogged = 0;
@@ -525,8 +525,8 @@ static void web_main_loop_iteration(void) {
     const f64 now = emscripten_get_now() / 1000.0;
     if (sNextTick < 0.0) { sNextTick = now; sLoggedAt = now; }
 
-    // Si nos hemos quedado muy atras (pestana en segundo plano, carga...), saltamos
-    // al presente: asi no intentamos "recuperar" el tiempo perdido acelerando.
+    // If we fell far behind (background tab, loading...), we jump to the present:
+    // that way we do not try to "catch up" with the lost time by speeding up.
     if (now - sNextTick > 0.5) { sNextTick = now; }
 
     const f64 loopStart = now;
@@ -551,15 +551,15 @@ static void web_main_loop_iteration(void) {
         djui_ctx_display_update();
 #endif
         djui_lua_profiler_update();
-        // Mods anadidos desde el navegador: se importan aqui, en el bucle normal.
+        // Mods added from the browser: they are imported here, in the normal loop.
         web_add_files_process();
     }
 
-    // Si el fotograma se ha pasado de largo, tampoco acumulamos deuda.
+    // If the frame took too long, we do not accumulate debt either.
     const f64 after = emscripten_get_now() / 1000.0;
     if (after - loopStart > 0.05) { sNextTick = after; }
 
-    // [temporal] comprobacion del ritmo real del juego en el navegador
+    // [temporary] real game pace check in the browser
     if (after >= sLoggedAt + 5.0) {
         printf("[web-fps] %.1f iterations/s (target %d)\n", (double)sTicksLogged / (after - sLoggedAt), FRAMERATE);
         fflush(stdout);
@@ -567,9 +567,9 @@ static void web_main_loop_iteration(void) {
         sLoggedAt = after;
     }
 
-    // Volcado del guardado a IndexedDB cada 10 s (partidas, mods y ajustes).
-    // El archivo se marca como "sucio" al escribirlo, asi que syncfs solo sube lo
-    // que ha cambiado.
+    // Flush the saved data to IndexedDB every 10 s (games, mods and settings).
+    // A file is marked as "dirty" when it is written, so syncfs only uploads what
+    // has changed.
     if (after >= sLastSyncAt + 10.0) {
         sLastSyncAt = after;
         EM_ASM({ if (typeof FS !== 'undefined' && FS.syncfs) { FS.syncfs(false, function () {}); } });
@@ -578,31 +578,31 @@ static void web_main_loop_iteration(void) {
 #endif
 
 #ifdef __EMSCRIPTEN__
-// El ROM que trae el build viaja en /rom (paquete de solo lectura). El juego solo
-// busca el .z64 en su carpeta de escritura, que en web esta montada sobre
-// IndexedDB y empieza vacia, asi que lo copiamos ahi la primera vez. A partir de
-// ahi el ROM (y los guardados) ya quedan en el navegador del jugador.
+// The ROM that ships inside the build travels in /rom (a read-only package). The
+// game only looks for the .z64 in its write directory, which on the web is mounted
+// on IndexedDB and starts out empty, so we copy it there the first time. From then
+// on the ROM (and the saves) stay in the player's browser.
 static void web_copy_bundled_rom(void) {
-    static char destino[SYS_MAX_PATH];
-    snprintf(destino, sizeof(destino), "%s", fs_get_write_path("baserom.us.z64"));
+    static char dest[SYS_MAX_PATH];
+    snprintf(dest, sizeof(dest), "%s", fs_get_write_path("baserom.us.z64"));
 
-    FILE* yaEsta = fopen(destino, "rb");
-    if (yaEsta != NULL) { fclose(yaEsta); return; }
+    FILE* alreadyThere = fopen(dest, "rb");
+    if (alreadyThere != NULL) { fclose(alreadyThere); return; }
 
-    FILE* origen = fopen("/rom/baserom.us.z64", "rb");
-    if (origen == NULL) { return; } // build sin ROM incrustado
+    FILE* in = fopen("/rom/baserom.us.z64", "rb");
+    if (in == NULL) { return; } // build with no embedded ROM
 
-    FILE* copia = fopen(destino, "wb");
-    if (copia == NULL) { fclose(origen); return; }
+    FILE* out = fopen(dest, "wb");
+    if (out == NULL) { fclose(in); return; }
 
-    static char bloque[65536];
-    size_t leidos;
-    while ((leidos = fread(bloque, 1, sizeof(bloque), origen)) > 0) {
-        fwrite(bloque, 1, leidos, copia);
+    static char chunk[65536];
+    size_t readBytes;
+    while ((readBytes = fread(chunk, 1, sizeof(chunk), in)) > 0) {
+        fwrite(chunk, 1, readBytes, out);
     }
-    fclose(origen);
-    fclose(copia);
-    printf("[web] bundled rom copied to %s\n", destino);
+    fclose(in);
+    fclose(out);
+    printf("[web] bundled rom copied to %s\n", dest);
     fflush(stdout);
 }
 #endif
@@ -658,7 +658,7 @@ int main(int argc, char *argv[]) {
     // render the rom setup screen
     WEBBOOT(8); printf("[web-boot] 8 calling main_rom_handler\n"); fflush(stdout);
 #ifdef __EMSCRIPTEN__
-    // El ROM incrustado hay que dejarlo en la carpeta de escritura (IndexedDB).
+    // The embedded ROM has to be left in the write directory (IndexedDB).
     web_copy_bundled_rom();
 #endif
     if (!main_rom_handler()) {
@@ -739,10 +739,10 @@ int main(int argc, char *argv[]) {
     // main loop
     WEBBOOT(13); printf("[web-boot] 13 entering main loop\n"); fflush(stdout);
 #ifdef __EMSCRIPTEN__
-    // El ritmo (30 pasos/s) lo lleva web_main_loop_iteration contando el tiempo
-    // real, asi que aqui pedimos el modo normal del navegador (requestAnimationFrame):
-    // nos llamara a la frecuencia del monitor y nosotros decidimos cuando avanzar
-    // el juego. De paso, si la pestana se oculta el juego se pausa solo.
+    // The pace (30 steps/s) is handled by web_main_loop_iteration by counting real
+    // time, so here we ask for the browser's normal mode (requestAnimationFrame):
+    // it calls us at the monitor's rate and we decide when to advance the game.
+    // On top of that, if the tab is hidden the game pauses by itself.
     emscripten_set_main_loop(web_main_loop_iteration, 0, 1);
 #else
     while (true) {

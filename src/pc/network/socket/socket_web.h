@@ -2,22 +2,22 @@
 #define SOCKET_WEB_H
 
 // ---------------------------------------------------------------------------
-// Transporte de red para el build web (Emscripten / WebAssembly).
+// Network transport for the web build (Emscripten / WebAssembly).
 //
-// El juego habla su propio protocolo sobre datagramas UDP, pero un navegador
-// NO puede abrir sockets UDP. La solucion es un "socket virtual": a cada
-// jugador se le asigna una direccion sintetica (::ffff:10.0.0.<id>, donde
-// id=1 es siempre el host y 2..N los clientes) y los datagramas viajan por
-// WebSocket hasta un relay (servidor tonto, p.ej. en Render) que los reenvia:
+// The game speaks its own protocol over UDP datagrams, but a browser CANNOT
+// open UDP sockets. The solution is a "virtual socket": every player is given a
+// synthetic address (::ffff:10.0.0.<id>, where id=1 is always the host and
+// 2..N are the clients) and the datagrams travel over WebSocket to a relay
+// (a dumb server, e.g. on Render) that forwards them:
 //
-//     cliente -> host        (el relay marca el id del cliente como origen)
-//     host    -> clientes    (broadcast o a un cliente concreto)
+//     client -> host        (the relay tags the client's id as the source)
+//     host   -> clients     (broadcast or to a particular client)
 //
-// El relay no entiende el juego: solo mueve bytes. Toda la logica (paquetes,
-// reconexiones, estado) sigue siendo la del juego.
+// The relay does not understand the game: it only moves bytes. All the logic
+// (packets, reconnections, state) is still the game's.
 //
-// Si no hay relay disponible, el juego NO se bloquea: los envios se descartan
-// y no llega nada, que es exactamente "partida con 0 clientes" (modo solitario).
+// If no relay is available the game does NOT block: sends are dropped and
+// nothing arrives, which is exactly "a game with 0 clients" (single player).
 // ---------------------------------------------------------------------------
 
 #include <sys/socket.h>
@@ -39,18 +39,18 @@
 SOCKET socket_initialize(void);
 void socket_shutdown(SOCKET socket);
 
-// Backend web (lo usa socket.c)
+// Web backend (used by socket.c)
 void webnet_begin(int networkType);
 int  webnet_bind(unsigned int port);
 int  webnet_send(struct sockaddr_in6* addr, const unsigned char* buffer, unsigned short length);
 int  webnet_receive(struct sockaddr_in6* rxAddr, unsigned char* buffer, unsigned short bufferLength, unsigned short* receiveLength);
 void webnet_make_host_addr(struct sockaddr_in6* addr);
 
-// Menu web: nombre de sala y lista de salas del relay
+// Web menu: room name and room list from the relay
 extern char gWebRoomName[64];
 void webnet_ensure_room_name(void);
-void webnet_rooms_fetch(void);                                 // pide la lista al relay (asincrono)
-int  webnet_rooms_state(void);                                 // 0 = cargando, 1 = lista, 2 = error
+void webnet_rooms_fetch(void);                                 // asks the relay for the list (asynchronous)
+int  webnet_rooms_state(void);                                 // 0 = loading, 1 = list ready, 2 = error
 int  webnet_rooms_count(void);
 void webnet_rooms_get(int i, char* room, int roomMax, int* clients);
 

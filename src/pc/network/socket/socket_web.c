@@ -9,13 +9,13 @@
 #include "pc/debuglog.h"
 
 // ---------------------------------------------------------------------------
-// Sockets virtuales sobre WebSocket (ver socket_web.h)
+// Virtual sockets on top of WebSocket (see socket_web.h)
 //
-// Direccion sintetica de un jugador:  ::ffff:10.0.0.<id>
-//   id 1  = host (el que hospeda la partida)
-//   id 2+ = clientes (los asigna el relay)
-// El ultimo byte de la direccion ES la informacion de enrutado: asi el juego
-// puede seguir comparando direcciones con memcmp() como siempre.
+// Synthetic address of a player:  ::ffff:10.0.0.<id>
+//   id 1  = host (the one hosting the game)
+//   id 2+ = clients (assigned by the relay)
+// The last byte of the address IS the routing information: that way the game
+// can keep comparing addresses with memcmp() as it always did.
 // ---------------------------------------------------------------------------
 
 #define WEBNET_HOST_ID 1
@@ -32,8 +32,9 @@ static void webnet_addr_from_id(unsigned char id, struct sockaddr_in6* addr) {
 static unsigned char webnet_id_from_addr(const struct sockaddr_in6* addr) {
     if (addr == NULL) { return WEBNET_HOST_ID; }
     const unsigned char* b = addr->sin6_addr.s6_addr;
-    // Si no es una direccion sintetica nuestra (p.ej. el jugador escribio una IP
-    // real), asumimos que va al host: en web solo existe "el host de la sala".
+    // If it is not one of our synthetic addresses (the player typed a real IP,
+    // for instance), we assume it goes to the host: on the web there is only
+    // "the host of the room".
     if (b[10] != 0xff || b[11] != 0xff || b[12] != 0 || b[13] != 0 || b[14] != 0) {
         return WEBNET_HOST_ID;
     }
@@ -47,10 +48,10 @@ void webnet_make_host_addr(struct sockaddr_in6* addr) {
 
 // ---------------------------------- glue JS --------------------------------
 
-// Abre (o reintenta abrir) el WebSocket contra el relay.
-//   isHost: 1 si hospedamos, 0 si nos unimos
-//   room:   codigo de sala (host: "p<puerto>", cliente: texto del campo IP)
-//   relay:  "host:puerto" o "ws://host:puerto"; vacio = automatico
+// Opens (or retries opening) the WebSocket against the relay.
+//   isHost: 1 if we are hosting, 0 if we are joining
+//   room:   room code (host: "p<port>", client: text from the IP field)
+//   relay:  "host:port" or "ws://host:port"; empty = automatic
 EM_JS(int, webnet_js_begin, (int isHost, const char* roomC, const char* relayC), {
     var P = function (x) { return (typeof x === 'bigint') ? Number(x) : x; };
     var N = globalThis.__webnet;
@@ -69,12 +70,12 @@ EM_JS(int, webnet_js_begin, (int isHost, const char* roomC, const char* relayC),
         try { cfg = new URLSearchParams(location.search).get('relay') || ""; } catch (e) {}
     }
     if (!cfg && typeof location !== 'undefined') {
-        // - http (local/LAN): el relay suele estar en el puerto 4321
-        // - https (tunel de Cloudflare o servidor en la nube): la pagina y el
-        //   relay van en el MISMO host y puerto (443), asi que basta con eso.
+        // - http (local/LAN): the relay is usually on port 4321
+        // - https (Cloudflare tunnel or a server in the cloud): the page and
+        //   the relay live on the SAME host and port (443), so that is enough.
         cfg = (location.protocol === 'https:') ? location.host : (location.hostname + ':4321');
     }
-    // nos quedamos con "host:puerto" (aceptamos que escriban ws:// o https://)
+    // we keep just "host:port" (we accept ws:// or https:// being typed)
     cfg = String(cfg);
     if (cfg.indexOf("://") >= 0) { cfg = cfg.substring(cfg.indexOf("://") + 3); }
     var secure = (typeof location !== 'undefined' && location.protocol === 'https:');
@@ -82,8 +83,9 @@ EM_JS(int, webnet_js_begin, (int isHost, const char* roomC, const char* relayC),
     N.url = (secure ? 'wss://' : 'ws://') + cfg + '/ws?room=' + encodeURIComponent(room) + '&role=' + (isHost ? 'host' : 'client');
 
     function connect() {
-        // Si quedo alguna conexion vieja abierta, la cerramos antes de abrir otra.
-        // (Si no, el relay veria dos hosts de la misma sala y pelearian para siempre.)
+        // If an old connection is still open, close it before opening another.
+        // (Otherwise the relay would see two hosts of the same room and they
+        //  would fight each other forever.)
         if (N.ws) {
             try { N.ws.onclose = null; N.ws.onmessage = null; N.ws.close(); } catch (e) {}
             N.ws = null;
@@ -94,11 +96,11 @@ EM_JS(int, webnet_js_begin, (int isHost, const char* roomC, const char* relayC),
         ws.onopen = function () {
             N.status = 'open';
             console.log('[webnet] relay connected: ' + N.url);
-            // El juego manda su primer datagrama (la peticion de lista de mods)
-            // en el mismo instante en que conectamos, sin esperar a que el
-            // WebSocket termine de abrir: si lo tiraramos, el host nunca
-            // contestaria y el cliente jamas llegaria a unirse. Asi que lo
-            // guardamos y lo enviamos ahora, en orden.
+            // The game sends its first datagram (the mod list request) at the
+            // very moment we connect, without waiting for the WebSocket to
+            // finish opening: if we dropped it, the host would never answer and
+            // the client would never manage to join. So we keep it and send it
+            // now, in order.
             if (N.outbox && N.outbox.length > 0) {
                 var pending = N.outbox.length;
                 for (var i = 0; i < N.outbox.length; i++) {
@@ -107,9 +109,10 @@ EM_JS(int, webnet_js_begin, (int isHost, const char* roomC, const char* relayC),
                 N.outbox.length = 0;
                 console.log('[webnet] flushed ' + pending + ' queued datagrams');
             }
-            // Solo damos por valido el intento si la conexion aguanta un rato.
-            // Asi, si el relay la cierra enseguida (p.ej. sala ocupada), el
-            // contador de intentos no se reinicia y no intentamos para siempre.
+            // We only count the attempt as good if the connection lasts a
+            // while. That way, if the relay closes it right away (the room is
+            // taken, for instance), the attempt counter is not reset and we do
+            // not keep trying forever.
             setTimeout(function () {
                 if (N.ws === ws && ws.readyState === 1) { N.tries = 0; }
             }, 10000);
@@ -118,16 +121,17 @@ EM_JS(int, webnet_js_begin, (int isHost, const char* roomC, const char* relayC),
         ws.onmessage = function (ev) {
             var b = new Uint8Array(ev.data);
             if (b.length < 1) { return; }
-            if (N.inbox.length > 8192) { return; } // proteccion anti-saturacion
+            if (N.inbox.length > 8192) { return; } // flood protection
             N.inbox.push({ src: b[0], data: b.subarray(1) });
         };
         ws.onclose = function (ev) {
             if (N.ws === ws) { N.ws = null; }
             N.status = 'closed';
             if (ev && ev.code === 4001) {
-                // El relay nos dice que esa sala ya tiene otro host vivo: dejamos
-                // de insistir (seguimos jugando en solitario) en vez de pelearnos
-                // por la sala en un bucle de reconexiones.
+                // The relay is telling us that this room already has another
+                // live host: we stop insisting (we keep playing in single
+                // player) instead of fighting over the room in a reconnection
+                // loop.
                 N.role = 0;
                 console.log('[webnet] room "' + N.room + '" already has another host: staying without relay');
                 return;
@@ -152,25 +156,25 @@ EM_JS(int, webnet_js_begin, (int isHost, const char* roomC, const char* relayC),
     return 1;
 });
 
-// Envia un datagrama.  frame = [dst][0] + payload   (el relay rellena el origen)
-// Devuelve 0 si se envio, -1 si no hay relay (el juego lo ignora: modo solitario).
+// Sends a datagram.  frame = [dst][0] + payload   (the relay fills in the source)
+// Returns 0 if it was sent, -1 if there is no relay (the game ignores it: single player).
 EM_JS(int, webnet_js_send, (int dst, double ptr, int len), {
     var N = globalThis.__webnet;
     if (!N) { return -1; }
-    // OJO: Emscripten 4 ya NO publica Module.HEAPxx. Usamos la vista local y, si
-    // no existiera, la del Module (asi vale en cualquier version).
+    // NOTE: Emscripten 4 no longer publishes Module.HEAPxx. We use the local
+    // view and, if it did not exist, the Module one (so it works on any version).
     var H8 = (typeof HEAPU8 !== 'undefined') ? HEAPU8 : Module['HEAPU8'];
     if (!H8) { return -1; }
     var p = (typeof ptr === 'bigint') ? Number(ptr) : ptr;
     var frame = new Uint8Array(2 + len);
-    frame[0] = dst & 0xff;  // 0 = todos los clientes, 1 = host, N = cliente N
-    frame[1] = 0;           // origen: lo pone el relay
+    frame[0] = dst & 0xff;  // 0 = all clients, 1 = host, N = client N
+    frame[1] = 0;           // source: the relay fills it in
     frame.set(H8.subarray(p, p + len), 2);
     if (!N.ws || N.ws.readyState !== 1) {
-        // El WebSocket aun esta abriendo (o se acaba de caer). Guardamos el
-        // datagrama para enviarlo en cuanto conecte: si lo descartaramos, el
-        // primer paquete del cliente (peticion de lista de mods) se perderia
-        // SIEMPRE y la union a la sala host nunca terminaria.
+        // The WebSocket is still opening (or it just dropped). We keep the
+        // datagram to send it as soon as it connects: if we dropped it, the
+        // client's first packet (the mod list request) would be lost EVERY time
+        // and joining the host's room would never finish.
         if (!N.outbox) { N.outbox = []; }
         if (N.role !== 0 && N.outbox.length < 512) { N.outbox.push(frame); }
         return 0;
@@ -179,8 +183,8 @@ EM_JS(int, webnet_js_send, (int dst, double ptr, int len), {
     return 0;
 });
 
-// Saca un datagrama de la cola de entrada.
-// Devuelve 1 si habia algo (y escribe payload, src y longitud), 0 si no.
+// Takes a datagram out of the incoming queue.
+// Returns 1 if there was one (and writes payload, src and length), 0 if not.
 EM_JS(int, webnet_js_recv, (double ptr, int maxLen, double srcPtr, double lenPtr), {
     var N = globalThis.__webnet;
     if (!N || N.inbox.length === 0) { return 0; }
@@ -198,7 +202,7 @@ EM_JS(int, webnet_js_recv, (double ptr, int maxLen, double srcPtr, double lenPtr
     return 1;
 });
 
-// Cierra la conexion (al salir de la partida).
+// Closes the connection (when leaving the game).
 EM_JS(void, webnet_js_close, (int unused), {
     var N = globalThis.__webnet;
     if (!N) { return; }
@@ -210,10 +214,10 @@ EM_JS(void, webnet_js_close, (int unused), {
     console.log('[webnet] relay closed');
 });
 
-// --------------------- lista de salas (para el menu de unirse) --------------
+// ------------------------ room list (for the join menu) --------------------
 
-// Le pide al relay la lista de salas abiertas (GET /rooms). Es asincrono:
-// despues hay que mirar webnet_rooms_state() hasta que deje de estar en 0.
+// Asks the relay for the list of open rooms (GET /rooms). It is asynchronous:
+// afterwards webnet_rooms_state() has to be polled until it leaves 0.
 EM_JS(void, webnet_js_rooms_fetch, (int unused), {
     var N = globalThis.__webnet;
     if (!N) { N = globalThis.__webnet = { ws: null, role: 0, inbox: [], status: "idle", url: "", tries: 0, rooms: [], roomsState: 0 }; }
@@ -241,7 +245,7 @@ EM_JS(void, webnet_js_rooms_fetch, (int unused), {
         });
 });
 
-// estado: 0 = cargando, 1 = lista, 2 = error
+// state: 0 = loading, 1 = list ready, 2 = error
 EM_JS(int, webnet_js_rooms_state, (int unused), {
     var N = globalThis.__webnet;
     return (N && N.roomsState) ? N.roomsState : 0;
@@ -252,41 +256,41 @@ EM_JS(int, webnet_js_rooms_count, (int unused), {
     return (N && N.rooms) ? N.rooms.length : 0;
 });
 
-// Copia el nombre de la sala i a un buffer de C (y cuantos jugadores hay dentro).
+// Copies the name of room i into a C buffer (and how many players are in it).
 EM_JS(int, webnet_js_rooms_get, (int i, double ptr, int maxLen, double clientsPtr), {
     var N = globalThis.__webnet;
     var P = function (x) { return (typeof x === 'bigint') ? Number(x) : x; };
-    // Emscripten 4 no publica Module.HEAPxx: usamos la vista del modulo.
+    // Emscripten 4 does not publish Module.HEAPxx: we use the module view.
     var H8 = (typeof HEAPU8 !== 'undefined') ? HEAPU8 : Module['HEAPU8'];
     var cp = clientsPtr ? P(clientsPtr) : 0;
     if (H8 && cp) { new DataView(H8.buffer).setInt32(cp, 0, true); }
     if (!N || !N.rooms || i < 0 || i >= N.rooms.length) { return 0; }
     if (!H8 || maxLen <= 0) { return 0; }
-    // Copiamos a mano (no dependemos de stringToUTF8, que puede no estar exportada)
+    // We copy by hand (we do not depend on stringToUTF8, which may not be exported)
     var s = String(N.rooms[i].room);
     var q = P(ptr);
     var lim = Math.min(s.length, maxLen - 1);
     for (var k = 0; k < lim; k++) { H8[q + k] = s.charCodeAt(k) & 0xff; }
     H8[q + lim] = 0;
-    if (cp) { new DataView(H8.buffer).setInt32(cp, (N.rooms[i].clients | 0) + 1, true); } // +1 = el host
+    if (cp) { new DataView(H8.buffer).setInt32(cp, (N.rooms[i].clients | 0) + 1, true); } // +1 = the host
     return 1;
 });
 
 // ---------------------------------- API C ----------------------------------
 
-// Nombre de sala elegido en el menu "Crear" (build web).
+// Room name chosen in the "Create" menu (web build).
 char gWebRoomName[64] = { 0 };
 
 void webnet_ensure_room_name(void) {
     if (gWebRoomName[0] != '\0') { return; }
-    // Nombre por defecto: facil de leer y de decir en voz alta. Se puede cambiar
-    // en el campo "Sala" del menu de crear partida.
+    // Default name: easy to read and to say out loud. It can be changed in the
+    // "Room" field of the create game menu.
     unsigned int n = (unsigned int)(emscripten_get_now() * 7.0) % 1000u;
-    snprintf(gWebRoomName, sizeof(gWebRoomName), "sala%03u", n);
+    snprintf(gWebRoomName, sizeof(gWebRoomName), "room%03u", n);
 }
 
 void webnet_begin(int networkType) {
-    // No hay sockets reales: solo una conexion al relay.
+    // There are no real sockets: just one connection to the relay.
     char room[64] = { 0 };
     int isHost = (networkType == NT_SERVER) ? 1 : 0;
     if (isHost) {
@@ -296,13 +300,13 @@ void webnet_begin(int networkType) {
         snprintf(room, sizeof(room), "%s", configJoinIp);
     }
     if (room[0] == '\0') {
-        // Sin nombre de sala no hay con quien hablar: seguimos en solitario en
-        // vez de abrir una conexion inutil al relay.
+        // Without a room name there is nobody to talk to: we stay in single
+        // player instead of opening a useless connection to the relay.
         LOG_INFO("webnet: no room name, going without network (single player mode)");
         return;
     }
     webnet_js_begin(isHost, room, "");
-    LOG_INFO("webnet: %s (sala '%s')", isHost ? "hospedando" : "uniendose", room);
+    LOG_INFO("webnet: %s (room '%s')", isHost ? "hosting" : "joining", room);
 }
 
 void webnet_rooms_fetch(void) { webnet_js_rooms_fetch(0); }
@@ -315,7 +319,7 @@ void webnet_rooms_get(int i, char* room, int roomMax, int* clients) {
 }
 
 SOCKET socket_initialize(void) {
-    return 1; // handle ficticio: el WebSocket se abre en webnet_begin()
+    return 1; // fake handle: the WebSocket is opened in webnet_begin()
 }
 
 void socket_shutdown(SOCKET socket) {
@@ -331,7 +335,7 @@ int webnet_bind(unsigned int port) {
 int webnet_send(struct sockaddr_in6* addr, const unsigned char* buffer, unsigned short length) {
     unsigned char dst = webnet_id_from_addr(addr);
     if (webnet_js_send(dst, (double)(uintptr_t)buffer, (int)length) != 0) {
-        // Sin relay: no hay a donde enviar. Se descarta en silencio.
+        // No relay: there is nowhere to send it to. It is dropped silently.
         return NO_ERROR;
     }
     return NO_ERROR;
@@ -342,7 +346,7 @@ int webnet_receive(struct sockaddr_in6* rxAddr, unsigned char* buffer, unsigned 
     int length = 0;
     *receiveLength = 0;
     if (!webnet_js_recv((double)(uintptr_t)buffer, (int)bufferLength, (double)(uintptr_t)&srcId, (double)(uintptr_t)&length)) {
-        return SOCKET_ERROR; // nada nuevo (equivale a EWOULDBLOCK)
+        return SOCKET_ERROR; // nothing new (same as EWOULDBLOCK)
     }
     webnet_addr_from_id((unsigned char)(srcId & 0xff), rxAddr);
     *receiveLength = (unsigned short)length;

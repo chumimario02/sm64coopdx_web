@@ -506,7 +506,7 @@ static struct ShaderProgram *gfx_opengl_create_and_load_new_shader(struct ColorC
 
         // exposure
         append_line(fs_buf, &fs_len, "if (uShaderFlags[4] == 1) {");
-        // GLSL ES 1.00 (WebGL) no permite mezclar int con float: el literal debe ser 2.0
+        // GLSL ES 1.00 (WebGL) does not allow mixing int with float: the literal must be 2.0
         append_line(fs_buf, &fs_len, "texel.rgb = texel.rgb + (uShaderFlagValues[4] - 2.0) * texel.rgb + texel.rgb;");
         append_line(fs_buf, &fs_len, "}");
 
@@ -518,7 +518,7 @@ static struct ShaderProgram *gfx_opengl_create_and_load_new_shader(struct ColorC
         // posterization
         append_line(fs_buf, &fs_len, "if (uShaderFlags[6] == 1) {");
         append_line(fs_buf, &fs_len, "int levels = int(max(1.0, uShaderFlagValues[6]));");
-        // GLSL ES 1.00 no convierte int->float implicitamente: hay que convertir a float a mano
+        // GLSL ES 1.00 does not convert int->float implicitly: it has to be converted to float by hand
         append_line(fs_buf, &fs_len, "texel.rgb = floor(texel.rgb * float(levels)) / float(levels);");
         append_line(fs_buf, &fs_len, "}");
 
@@ -837,8 +837,8 @@ static void gfx_opengl_init(void) {
 
     glBindBuffer(GL_ARRAY_BUFFER, opengl_vbo);
 
-    // Los VAO solo existen en OpenGL 3+/GLES3; en GLES2 (RPi) y en WebGL1 no se usan.
-    // (En la RPi esto compilaba como simple warning; Clang 20 de Emscripten lo trata como error.)
+    // VAOs only exist in OpenGL 3+/GLES3; they are not used in GLES2 (RPi) or WebGL1.
+    // (On the RPi this compiled as a plain warning; Emscripten's Clang 20 treats it as an error.)
 #ifndef USE_GLES
     if (vmajor >= 3 && !is_es) {
         glGenVertexArrays(1, &opengl_vao);

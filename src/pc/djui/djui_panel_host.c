@@ -31,8 +31,8 @@ static void djui_panel_host_network_system_change(UNUSED struct DjuiBase* base) 
 static bool djui_panel_host_port_valid(void) {
     char* buffer = sInputboxPort->buffer;
 #ifdef TARGET_WEB
-    // En el build web este campo NO es un puerto, es el NOMBRE DE LA SALA:
-    // vale cualquier texto que no este vacio.
+    // In the web build this field is NOT a port, it is the ROOM NAME:
+    // any text that is not empty is valid.
     return (buffer != NULL && strlen(buffer) > 0);
 #else
     int port = 0;
@@ -84,16 +84,16 @@ static void djui_panel_host_do_host(struct DjuiBase* caller) {
     }
 
 #ifdef TARGET_WEB
-    // En web el campo no es un puerto: es el nombre de la sala que se comparte
-    // con los amigos (el relay la usa para juntar a los jugadores).
+    // On the web the field is not a port: it is the room name that is shared
+    // with your friends (the relay uses it to bring the players together).
     snprintf(gWebRoomName, sizeof(gWebRoomName), "%s", sInputboxPort->buffer);
 #else
     configHostPort = atoi(sInputboxPort->buffer);
 #endif
 
 #ifdef TARGET_WEB
-    // En web no existe el problema de "abrir puertos en el router": de eso se
-    // encarga el relay. Asi que no hace falta el aviso de socket de siempre.
+    // On the web there is no "opening ports on the router" problem: the relay
+    // takes care of that. So the usual socket warning is not needed.
     const bool skipSocketWarning = true;
 #else
     const bool skipSocketWarning = (configNetworkSystem == NS_COOPNET || configAmountOfPlayers == 1 || configHideSocketWarning);

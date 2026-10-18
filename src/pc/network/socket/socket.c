@@ -124,7 +124,7 @@ static int socket_receive(SOCKET socket, struct sockaddr_in6* rxAddr, u8* buffer
 
 #ifdef TARGET_WEB
     (void)socket;
-    // Datagrama traido del relay por WebSocket (o nada, si no hay relay).
+    // Datagram pulled from the relay over WebSocket (or nothing, if there is no relay).
     if (webnet_receive(rxAddr, buffer, bufferLength, receiveLength) != NO_ERROR) {
         return SOCKET_ERROR;
     }
@@ -159,9 +159,9 @@ static bool ns_socket_initialize(enum NetworkType networkType, UNUSED bool recon
     if (port == 0) { port = DEFAULT_PORT; }
 
 #ifdef TARGET_WEB
-    // En el navegador no hay sockets UDP: nos conectamos al relay (el host abre
-    // su sala, el cliente se une a la sala escrita en el menu). Si el relay no
-    // responde, el juego continua igual y se juega en solitario (0 clientes).
+    // There are no UDP sockets in the browser: we connect to the relay (the host
+    // opens its room, the client joins the room typed in the menu). If the relay
+    // does not answer, the game carries on and is played in single player.
     webnet_begin(networkType);
 #endif
 
@@ -192,11 +192,11 @@ static bool ns_socket_initialize(enum NetworkType networkType, UNUSED bool recon
         LOG_INFO("bound to port %u", port);
     } else if (networkType == NT_CLIENT) {
 #ifdef TARGET_WEB
-        // En web no hay DNS: lo que el jugador escribe en el campo "IP" es el
-        // NOMBRE DE LA SALA, y la direccion virtual del host ya la conocemos (id 1).
+        // There is no DNS on the web: what the player types in the "IP" field is
+        // the ROOM NAME, and we already know the virtual address of the host (id 1).
         webnet_make_host_addr(&sAddr[0]);
         sAddr[0].sin6_port = htons(port);
-        LOG_INFO("uniendose a la sala '%s'", configJoinIp);
+        LOG_INFO("joining room '%s'", configJoinIp);
 #else
         struct sockaddr_in6 addr;
         // set and clean struct to prevent garbage data

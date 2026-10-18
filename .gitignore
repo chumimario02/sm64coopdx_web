@@ -94,13 +94,13 @@ tools/ido5.3_compiler/usr/lib/libc.so.1
 tools/audiofile/libaudiofile.a
 
 # ---------------------------------------------------------------------------
-# Puerto web (Emscripten) - chumimario02
+# Web port (Emscripten) - chumimario02
 # ---------------------------------------------------------------------------
-# La carpeta build/ lleva dentro el ROM embebido (.data): NUNCA se sube
+# The build/ folder carries the embedded ROM (.data): NEVER pushed
 build/
 build-*/*.data
 
-# ROMs y copias del juego comercial: jamas al repositorio
+# ROMs and copies of the commercial game: never in the repository
 *.z64
 *.n64
 *.v64

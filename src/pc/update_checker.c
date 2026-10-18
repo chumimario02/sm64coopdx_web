@@ -105,8 +105,8 @@ void get_version_remote(void) {
     sRemoteVersionStr[0] = '\0';
 
 #ifdef __EMSCRIPTEN__
-    // En el navegador no hay libcurl ni wininet: se omite la descarga. El resto del
-    // archivo (comparacion de versiones, popup) se sigue usando normalmente.
+    // There is no libcurl or wininet in a browser: the download is skipped. The
+    // rest of the file (version comparison, popup) keeps being used as usual.
     return;
 #else
 #if defined(_WIN32)

@@ -16,10 +16,10 @@
 static struct DjuiInputbox* sInputboxIp = NULL;
 
 #ifdef TARGET_WEB
-// Lista de salas abiertas que devuelve el relay.
-// MUY IMPORTANTE: no se crean ni se destruyen elementos en marcha (eso bloquea
-// el juego). Se crean 4 botones fijos al abrir el panel y despues SOLO se les
-// cambia el texto y la visibilidad.
+// List of open rooms returned by the relay.
+// VERY IMPORTANT: no element is created or destroyed while the game runs (that
+// blocks the game). 4 fixed buttons are created when the panel opens and
+// afterwards ONLY their text and visibility are changed.
 #define WEB_ROOM_SLOTS 4
 
 static struct DjuiButton* sRoomButtons[WEB_ROOM_SLOTS] = { NULL };
@@ -187,8 +187,8 @@ static void djui_panel_join_direct_ip_text_set_new(void) {
 static void djui_panel_join_direct_ip_text_set(struct DjuiInputbox* inputbox1) {
     char buffer[256] = { 0 };
 #ifdef TARGET_WEB
-    // En web el campo es el NOMBRE DE LA SALA (no hay IP ni puerto): recordamos
-    // la ultima sala a la que te uniste.
+    // On the web the field is the ROOM NAME (there is no IP or port): we remember
+    // the last room you joined.
     snprintf(buffer, 256, "%s", configJoinIp);
 #else
     if (strlen(configJoinIp) > 0 && configJoinPort != DEFAULT_PORT) {
@@ -206,10 +206,10 @@ static void djui_panel_join_direct_ip_text_set(struct DjuiInputbox* inputbox1) {
 void djui_panel_join_direct_do_join(struct DjuiBase* caller);
 
 #ifdef TARGET_WEB
-// --------------------------- lista de salas (web) ---------------------------
+// ---------------------------- room list (web) -------------------------------
 
 static void djui_panel_join_direct_room_click(struct DjuiBase* caller) {
-    // Al pulsar una sala: la ponemos en el campo y entramos directamente.
+    // When a room is clicked: we put it in the field and join straight away.
     char room[64] = { 0 };
     int players = 0;
     webnet_rooms_get(caller->tag, room, sizeof(room), &players);
@@ -223,12 +223,12 @@ static void djui_panel_join_direct_rooms_refresh(UNUSED struct DjuiBase* caller)
     sRoomsWaiting = true;
 }
 
-// Se llama cada fotograma desde djui_panel_update(). Solo cambia TEXTOS y
-// visibilidad: crear o destruir elementos aqui (o dibujando) bloquea el juego.
+// Called every frame from djui_panel_update(). It only changes TEXT and
+// visibility: creating or destroying elements here (or while drawing) blocks the game.
 void djui_panel_join_direct_poll(void) {
-    if (sRoomsStateText == NULL) { return; }        // el panel no esta abierto
+    if (sRoomsStateText == NULL) { return; }        // the panel is not open
     if (sRoomsWaiting) {
-        if (webnet_rooms_state() == 0) { return; }  // el relay aun no ha respondido
+        if (webnet_rooms_state() == 0) { return; }  // the relay has not answered yet
         sRoomsWaiting = false;
     }
 
@@ -252,7 +252,7 @@ void djui_panel_join_direct_poll(void) {
         }
     }
 
-    // Aviso de "no hay salas" (solo cuando ya ha respondido el relay).
+    // "no rooms" notice (only once the relay has answered).
     static char sShownMsg[64] = { 0 };
     const char* msg = (count > 0) ? "" : DLANG(JOIN, NO_ROOMS);
     if (strcmp(sShownMsg, msg) != 0) {
@@ -261,8 +261,8 @@ void djui_panel_join_direct_poll(void) {
     }
 }
 
-// Al cerrar el panel soltamos las referencias (si no, quedarian apuntando a
-// objetos ya destruidos).
+// When the panel is closed we release the references (otherwise they would be
+// pointing at already destroyed objects).
 static void djui_panel_join_direct_destroy(UNUSED struct DjuiBase* caller) {
     for (int i = 0; i < WEB_ROOM_SLOTS; i++) {
         sRoomButtons[i] = NULL;
@@ -275,7 +275,7 @@ static void djui_panel_join_direct_destroy(UNUSED struct DjuiBase* caller) {
 
 void djui_panel_join_direct_do_join(struct DjuiBase* caller) {
 #ifdef TARGET_WEB
-    // En web basta con el nombre de la sala (no hay IP ni puerto)
+    // On the web the room name is enough (there is no IP or port)
     if (!(strlen(sInputboxIp->buffer) > 0)) {
 #else
     if (!(strlen(sInputboxIp->buffer) > 2)) {
@@ -317,9 +317,9 @@ void djui_panel_join_direct_create(struct DjuiBase* caller) {
         djui_panel_join_direct_ip_text_set(inputbox1);
 
 #ifdef TARGET_WEB
-        // --------- lista de salas abiertas (la da el relay) ---------
-        // Se crean 4 botones fijos (ocultos) y luego SOLO se les cambia el
-        // texto: asi nunca hay que tocar el arbol mientras el juego corre.
+        // --------- list of open rooms (given by the relay) ---------
+        // 4 fixed buttons are created (hidden) and then ONLY their text is
+        // changed: that way the tree is never touched while the game runs.
         struct DjuiText* textRooms = djui_text_create(body, DLANG(JOIN, ROOMS_TITLE));
         djui_base_set_size_type(&textRooms->base, DJUI_SVT_RELATIVE, DJUI_SVT_ABSOLUTE);
         djui_base_set_size(&textRooms->base, 1.0f, 24);
@@ -338,14 +338,14 @@ void djui_panel_join_direct_create(struct DjuiBase* caller) {
             djui_base_set_size(&roomButton->base, 1.0f, 26);
             djui_base_set_visible(&roomButton->base, false);
             djui_base_set_enabled(&roomButton->base, false);
-            roomButton->base.tag = i;   // para saber que sala se ha pulsado
+            roomButton->base.tag = i;   // to know which room was clicked
             sRoomButtons[i] = roomButton;
             sShownRoomLabel[i][0] = '\0';
         }
 
         djui_button_create(body, DLANG(JOIN, ROOMS_REFRESH), DJUI_BUTTON_STYLE_NORMAL, djui_panel_join_direct_rooms_refresh);
 
-        // pedimos la lista (asincrono); el poll la pinta en cuanto llegue
+        // we ask for the list (asynchronous); the poll draws it as soon as it arrives
         webnet_rooms_fetch();
         sRoomsWaiting = true;
 #endif

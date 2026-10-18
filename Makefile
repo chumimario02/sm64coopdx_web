@@ -322,8 +322,8 @@ ifeq ($(TARGET_RK3588),1)
 endif
 
 ifeq ($(TARGET_WEB),1)
-  $(info Compilando para la web con Emscripten...)
-  # Estos SDKs son binarios nativos (DLL/.so/.dylib): no pueden existir en WebAssembly
+  $(info Compiling for the web with Emscripten...)
+  # These SDKs are native binaries (DLL/.so/.dylib): they cannot exist in WebAssembly
   DISCORD_SDK := 0
   COOPNET     := 0
   UPDATER     := 0
@@ -368,7 +368,7 @@ ifeq ($(TARGET_RK3588),1) # Define RK3588 to change SDL2 title & GLES2 hints
   DEFINES += USE_GLES=1
 endif
 
-ifeq ($(TARGET_WEB),1) # El navegador solo tiene WebGL (= OpenGL ES 2): mismos shaders que la RPi
+ifeq ($(TARGET_WEB),1) # A browser only has WebGL (= OpenGL ES 2): same shaders as the RPi
   DEFINES += USE_GLES=1 TARGET_WEB=1
 endif
 
@@ -541,10 +541,10 @@ endif
 #==============================================================================#
 
 ifeq ($(TARGET_WEB),1)
-  # El auto-actualizador usa libcurl (Linux) o wininet (Windows): en el navegador no
-  # existe ninguno de los dos. NO se excluye el archivo, porque al quitarlo del enlazado
-  # faltaban check_for_updates() y show_update_popup() (que usa pc_main.c). En su lugar
-  # update_checker.c se compila con la descarga desactivada (bloque #ifdef __EMSCRIPTEN__).
+  # The auto-updater uses libcurl (Linux) or wininet (Windows): neither exists in a
+  # browser. The file is NOT excluded, because removing it from the link left
+  # check_for_updates() and show_update_popup() missing (used by pc_main.c). Instead
+  # update_checker.c is compiled with the download disabled (#ifdef __EMSCRIPTEN__).
 endif
 
 # Sound files
@@ -768,15 +768,15 @@ SDLCONFIG := $(CROSS)sdl2-config
 BACKEND_CFLAGS += -DHAVE_SDL2=1
 
 ifeq ($(TARGET_WEB),1)
-  # Emscripten trae su propio SDL2 como "port" oficial (misma version 2.32.10).
+  # Emscripten brings its own SDL2 as an official "port" (same version 2.32.10).
   #
-  # ATENCION - esto era el bug que impedia que el juego arrancase:
-  # el sdl2-config de MSYS2 anade "-Dmain=SDL_main" a los CFLAGS y "-lSDL2main"
-  # a los LDFLAGS. Al renombrar main() a SDL_main() y no enlazar SDL2main, el
-  # binario se queda SIN main(): Emscripten genera un runtime que nunca llama a
-  # main() (no hay callMain en el .js), el modulo arranca y se queda ocioso para
-  # siempre, sin error visible. Con -sUSE_SDL=2 las cabeceras vienen del sysroot
-  # de Emscripten y main() sigue llamandose main().
+  # WARNING - this was the bug that stopped the game from starting:
+  # MSYS2's sdl2-config adds "-Dmain=SDL_main" to the CFLAGS and "-lSDL2main" to
+  # the LDFLAGS. By renaming main() to SDL_main() and not linking SDL2main, the
+  # binary is left WITHOUT main(): Emscripten generates a runtime that never calls
+  # main() (there is no callMain in the .js), the module starts and stays idle
+  # forever, with no visible error. With -sUSE_SDL=2 the headers come from the
+  # Emscripten sysroot and main() is still called main().
   BACKEND_CFLAGS  += -sUSE_SDL=2
   BACKEND_LDFLAGS += -sUSE_SDL=2
 else
@@ -800,7 +800,7 @@ endif
 #==============================================================================#
 
 ifeq ($(TARGET_WEB),1)
-  # zlib lo aporta Emscripten como port oficial, no el sistema operativo
+  # zlib is provided by Emscripten as an official port, not by the operating system
   BACKEND_CFLAGS  += -sUSE_ZLIB=1
   BACKEND_LDFLAGS += -sUSE_ZLIB=1
 endif
@@ -1022,28 +1022,28 @@ ifeq ($(OSX_BUILD),0)
 endif
 
 #==============================================================================#
-# Web build (Emscripten): el enlazado de escritorio no aplica                  #
+# Web build (Emscripten): the desktop link does not apply                      #
 #==============================================================================#
 
 ifeq ($(TARGET_WEB),1)
-  # Producir un .html listo para abrir en el navegador (+ .js y .wasm)
+  # Produce a .html ready to open in the browser (+ .js and .wasm)
   EXE := $(BUILD_DIR)/sm64coopdx.html
 
   # ---------------------------------------------------------------------------
-  # MEMORY64 (punteros de 64 bits) -> destino wasm64.
-  # MOTIVO: los datos de sonido que vienen en el repo (sound/sound_data_compressed.ctl
-  # y .tbl, sound/bank_sets_compressed, sequences) son BLOBS BINARIOS pre-generados con
-  # la disposicion en memoria de un anfitrion de 64 bits: ALSeqData mide 16 bytes
-  # (8 de puntero + 4 de len + 4 de relleno) en vez de los 8 de la N64. En wasm32 los
-  # punteros son de 4 bytes y al leer esos blobs salen desplazamientos basura -> el juego
-  # peta en patch_audio_bank(). Compilando con -m64 los bloques encajan EXACTOS.
-  # IMPORTANTE: esta linea tiene que ir DESPUES de los "CFLAGS := ..." de cada plataforma
-  # (linea ~820), o la asignacion la borra.
+  # MEMORY64 (64-bit pointers) -> wasm64 target.
+  # WHY: the sound data that ships in the repo (sound/sound_data_compressed.ctl
+  # and .tbl, sound/bank_sets_compressed, sequences) are BINARY BLOBS pre-generated
+  # with the memory layout of a 64-bit host: ALSeqData is 16 bytes
+  # (8 for the pointer + 4 for len + 4 of padding) instead of the N64's 8. In wasm32
+  # pointers are 4 bytes and reading those blobs yields garbage offsets -> the game
+  # crashes in patch_audio_bank(). Compiling with -m64 the blocks match EXACTLY.
+  # IMPORTANT: this line has to come AFTER the "CFLAGS := ..." of each platform
+  # (line ~820), or the assignment wipes it.
   CFLAGS += -m64
   # ---------------------------------------------------------------------------
 
-  # Se descarta TODO el LDFLAGS de escritorio (GL, curl, lua nativa, pthread,
-  # libatomic, -no-pie, linker script...) y se usan los ports de Emscripten.
+  # ALL the desktop LDFLAGS are discarded (GL, curl, native lua, pthread,
+  # libatomic, -no-pie, linker script...) and Emscripten's ports are used instead.
   LDFLAGS := -O2 -lm \
              -m64 \
              -sUSE_SDL=2 \
@@ -1057,44 +1057,44 @@ ifeq ($(TARGET_WEB),1)
              --pre-js web/pre.js \
              -lidbfs.js \
              lib/lua/web64/liblua53.a
-  # ^ EXPORTED_RUNTIME_METHODS: Emscripten 4 ya no publica Module.HEAPxx por
-  #   defecto. Nuestro codigo de red web (EM_JS) necesita escribir en el heap
-  #   (socket_web.c); exportarlas aqui garantiza que existan y evita que una
-  #   excepcion JS deje el juego congelado. FS y callMain los necesita la
-  #   pantalla de carga (web/shell.html + web/pre.js).
-  # ^ INVOKE_RUN=0 + --shell-file + --pre-js + -lidbfs.js: el juego ya no
-  #   arranca solo. Se espera a que IndexedDB (guardado persistente del
-  #   navegador) este montado y leido, y el jugador pulsa JUGAR: asi el navegador
-  #   permite entrar en pantalla completa y activar el sonido (exigen un clic).
+  # ^ EXPORTED_RUNTIME_METHODS: Emscripten 4 no longer publishes Module.HEAPxx by
+  #   default. Our web network code (EM_JS) needs to write into the heap
+  #   (socket_web.c); exporting them here guarantees they exist and stops a JS
+  #   exception from freezing the game. FS and callMain are needed by the
+  #   loading screen (web/shell.html + web/pre.js).
+  # ^ INVOKE_RUN=0 + --shell-file + --pre-js + -lidbfs.js: the game no longer
+  #   starts by itself. It waits for IndexedDB (the browser's persistent save)
+  #   to be mounted and read, and the player presses PLAY: that way the browser
+  #   allows going fullscreen and enabling the audio (they require a click).
 
-  # Opcional (solo para pruebas locales): incrustar un ROM en el propio build con
-  #   make ... WEB_ROM="/ruta/baserom.us.z64"
-  # Se coloca en /rom (fuera de la carpeta de escritura, que va montada como
-  # IndexedDB y por tanto empieza vacia); al arrancar, pc_main.c copia el .z64 a
-  # la carpeta de escritura la primera vez (es donde el juego lo busca).
-  # OJO: ese build CONTIENE el ROM y NO debe compartirse nunca.
+  # Optional (local testing only): embed a ROM in the build itself with
+  #   make ... WEB_ROM="/path/baserom.us.z64"
+  # It is placed in /rom (outside the write folder, which is mounted as IndexedDB
+  # and therefore starts out empty); at startup pc_main.c copies the .z64 into
+  # the write folder the first time (that is where the game looks for it).
+  # WARNING: that build CONTAINS the ROM and must never be shared.
   ifneq ($(WEB_ROM),)
     LDFLAGS += --preload-file $(WEB_ROM)@/rom/baserom.us.z64
   endif
 
   # ---------------------------------------------------------------------------
-  # Recursos que el juego busca junto al ejecutable: sys_resource_path() devuelve
-  # "" en web, asi que la raiz "/" del sistema de ficheros virtual es su carpeta.
-  #   /lang/*.ini  -> textos de los menus (sin esto salen las claves en crudo:
-  #                   "SAVE_SLOT" en vez de "Save Slot")
-  #   /mods        -> mods integrados (lua + assets); MOD_DIRECTORY
-  #   /palettes    -> paletas de jugador por defecto (player_palettes_read)
-  #   /dynos       -> packs DynOS base
+  # Resources the game looks for next to the executable: sys_resource_path() returns
+  # "" on the web, so the "/" root of the virtual filesystem is its folder.
+  #   /lang/*.ini  -> menu texts (without this the raw keys show up:
+  #                   "SAVE_SLOT" instead of "Save Slot")
+  #   /mods        -> bundled mods (lua + assets); MOD_DIRECTORY
+  #   /palettes    -> default player palettes (player_palettes_read)
+  #   /dynos       -> base DynOS packs
   # ---------------------------------------------------------------------------
   LDFLAGS += --preload-file lang@/lang
   LDFLAGS += --preload-file mods@/mods
   LDFLAGS += --preload-file palettes@/palettes
   LDFLAGS += --preload-file dynos@/dynos
 
-  # Diagnostico: make ... WEB_DEBUG=1  -> anade nombres de funcion a los stack
-  # traces (seccion "name" del wasm) y aserciones de Emscripten.
-  # (Ojo: pedir -g hace que Binaryen optimice menos, asi que los indices de funcion
-  #  NO coinciden con el build normal; los nombres si son validos.)
+  # Diagnostics: make ... WEB_DEBUG=1  -> adds function names to the stack
+  # traces (the "name" section of the wasm) and Emscripten assertions.
+  # (Note: asking for -g makes Binaryen optimise less, so the function indices
+  #  do NOT match the normal build; the names are still valid.)
   ifneq ($(WEB_DEBUG),)
     LDFLAGS += -g -sASSERTIONS=2
   endif

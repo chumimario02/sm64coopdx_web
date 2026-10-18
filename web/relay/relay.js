@@ -1,24 +1,24 @@
 #!/usr/bin/env node
 /*
- * relay.js - Relay WebSocket para sm64coopdx-web (multijugador SOLO navegadores).
+ * relay.js - WebSocket relay for sm64coopdx-web (multiplayer between browsers only).
  *
- * El navegador no puede abrir sockets UDP, asi que el juego lleva un "socket
- * virtual" sobre WebSocket. Este relay es tonto a proposito: no entiende el
- * juego, solo reenvia bytes en estrella.
+ * A browser cannot open UDP sockets, so the game carries a "virtual socket" on
+ * top of WebSocket. This relay is dumb on purpose: it does not understand the
+ * game, it only forwards bytes in a star shape.
  *
- * Protocolo de cada frame binario:
- *     [dst][src][payload...]     (de cliente a relay lleva src=0)
- *     [src][payload...]          (del relay al cliente)
- *   dst: 0 = todos los clientes, 1 = host, N = cliente N
- *   src: el relay lo pone siempre (1 = host, 2+ = clientes de esa sala)
+ * Protocol of every binary frame:
+ *     [dst][src][payload...]     (from a client to the relay; src is 0)
+ *     [src][payload...]          (from the relay to a client)
+ *   dst: 0 = all clients, 1 = host, N = client N
+ *   src: always set by the relay (1 = host, 2+ = clients of that room)
  *
- * Topologia:
- *     cliente -> relay -> host        (una sala tiene UN host)
- *     host    -> relay -> clientes    (broadcast, o a uno concreto)
+ * Topology:
+ *     client -> relay -> host        (a room has ONE host)
+ *     host   -> relay -> clients     (broadcast, or to a particular one)
  *
- * Sin dependencias: implementa el handshake y el framing de WebSocket a mano
- * (solo frames binarios pequenos), para poder desplegarlo en cualquier sitio
- * (Render incluido) con "node relay.js".
+ * No dependencies: it implements the WebSocket handshake and framing by hand
+ * (small binary frames only) so it can be deployed anywhere (Render included)
+ * with "node relay.js".
  */
 
 const http = require('http');
@@ -29,10 +29,10 @@ const path = require('path');
 const PORT = process.env.PORT || 4321;
 const MAGIC = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 
-// Carpeta con la pagina del juego (build/us_pc). Si existe, el relay tambien
-// sirve los ficheros: asi el juego y el relay van por el MISMO puerto y basta
-// con un unico tunel (p.ej. cloudflared) para jugar por internet con amigos.
-//   node relay.js [carpeta_estatica]
+// Folder with the game page (build/us_pc). If it exists, the relay also serves
+// the files: that way the game and the relay use the SAME port and a single
+// tunnel (cloudflared, for instance) is enough to play online with friends.
+//   node relay.js [static_folder]
 const STATIC_DIR = process.env.STATIC_DIR || process.argv[2] || '';
 
 const MIME = {
@@ -54,10 +54,10 @@ function serveStatic(req, res) {
     if (!full.startsWith(path.resolve(STATIC_DIR))) { res.writeHead(403); res.end(); return; }
     fs.stat(full, (err, st) => {
         if (err || !st.isFile()) {
-            // directorio: buscamos el html del juego
+            // it is a directory: look for the game html
             const alt = path.join(full, 'sm64coopdx.html');
             fs.stat(alt, (e2, s2) => {
-                if (e2 || !s2.isFile()) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('no encontrado: ' + rel); return; }
+                if (e2 || !s2.isFile()) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('not found: ' + rel); return; }
                 sendFile(alt, res);
             });
             return;
@@ -79,7 +79,7 @@ function log(...args) {
     console.log(new Date().toISOString().slice(11, 19), ...args);
 }
 
-// --------------------------- framing WebSocket -----------------------------
+// ---------------------------- WebSocket framing ----------------------------
 
 function writeFrame(peer, opcode, payload) {
     const len = payload.length;
@@ -102,7 +102,7 @@ function writeFrame(peer, opcode, payload) {
     try {
         peer.socket.write(Buffer.concat([header, payload]));
     } catch (e) {
-        log('error al escribir:', e.message);
+        log('write error:', e.message);
     }
 }
 
@@ -134,7 +134,7 @@ function onData(peer, chunk) {
             off += 4;
         }
 
-        if (b.length < off + len) return; // frame incompleto: esperar mas datos
+        if (b.length < off + len) return; // incomplete frame: wait for more data
 
         const payload = Buffer.from(b.subarray(off, off + len));
         if (maskKey) {
@@ -142,7 +142,7 @@ function onData(peer, chunk) {
         }
         peer.buf = b.subarray(off + len);
 
-        if (opcode === 0x2) {            // binario = datagrama del juego
+        if (opcode === 0x2) {            // binary = game datagram
             route(peer, payload);
         } else if (opcode === 0x8) {     // close
             peer.socket.end();
@@ -150,11 +150,11 @@ function onData(peer, chunk) {
         } else if (opcode === 0x9) {     // ping
             writeFrame(peer, 0xa, payload);
         }
-        // 0x1 (texto) y 0xa (pong) se ignoran
+        // 0x1 (text) and 0xa (pong) are ignored
     }
 }
 
-// ------------------------------ enrutado ----------------------------------
+// ------------------------------- routing ----------------------------------
 
 function route(peer, payload) {
     const r = peer.room;
@@ -164,7 +164,7 @@ function route(peer, payload) {
     const body = payload.subarray(2);
 
     if (peer.isHost) {
-        // del host a los clientes (broadcast o a uno)
+        // from the host to the clients (broadcast or to a single one)
         if (dst === 0) {
             for (const c of r.clients.values()) { sendToPeer(c, 1, body); }
         } else {
@@ -172,7 +172,7 @@ function route(peer, payload) {
             if (c) { sendToPeer(c, 1, body); }
         }
     } else {
-        // del cliente al host
+        // from the client to the host
         if (r.host) { sendToPeer(r.host, peer.id, body); }
     }
 }
@@ -190,18 +190,18 @@ function sendToPeer(peer, src, payload) {
 const server = http.createServer((req, res) => {
     if (req.url === '/' && !STATIC_DIR) {
         res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-        res.end('relay sm64coopdx-web OK\nsalas: ' + rooms.size + '\n');
+        res.end('relay sm64coopdx-web OK\nrooms: ' + rooms.size + '\n');
         return;
     }
     if (req.url.startsWith('/healthz')) {
         res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-        res.end('relay sm64coopdx-web OK\nsalas: ' + rooms.size + '\n');
+        res.end('relay sm64coopdx-web OK\nrooms: ' + rooms.size + '\n');
         return;
     }
     if (req.url.startsWith('/rooms')) {
         const list = [];
         for (const r of rooms.values()) {
-            if (!r.host) continue; // solo salas jugables
+            if (!r.host) continue; // only playable rooms
             list.push({ room: r.room, clients: r.clients.size, max: 32 });
         }
         res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
@@ -242,25 +242,25 @@ server.on('upgrade', (req, socket) => {
         const old = r.host;
         const oldAlive = old && old.socket && !old.socket.destroyed && !old.socket.writableEnded && old.socket.writable;
         if (oldAlive) {
-            // La sala ya tiene un host vivo: rechazamos al segundo para que dos
-            // personas no se "roben" la sala en un bucle de reconexiones.
-            log(`[${roomName}] sala ocupada: rechazo al segundo host`);
-            const motivo = Buffer.from('sala ocupada', 'utf8');
-            const payload = Buffer.alloc(2 + motivo.length);
+            // The room already has a live host: reject the second one so two
+            // people do not "steal" the room in a reconnection loop.
+            log(`[${roomName}] room taken: rejecting the second host`);
+            const reason = Buffer.from('room taken', 'utf8');
+            const payload = Buffer.alloc(2 + reason.length);
             payload.writeUInt16BE(4001, 0);
-            motivo.copy(payload, 2);
+            reason.copy(payload, 2);
             try { writeFrame(peer, 0x8, payload); } catch (e) {}
             try { socket.end(); } catch (e) {}
             return;
         }
-        if (old) { log(`[${roomName}] el host anterior estaba caido: lo reemplazo`); }
+        if (old) { log(`[${roomName}] the previous host was down: replacing it`); }
         r.host = peer;
         peer.id = 1;
-        log(`[${roomName}] HOST conectado (salas activas: ${rooms.size})`);
+        log(`[${roomName}] HOST connected (active rooms: ${rooms.size})`);
     } else {
         peer.id = r.nextId++;
         r.clients.set(peer.id, peer);
-        log(`[${roomName}] cliente ${peer.id} conectado (${r.clients.size} en la sala${r.host ? '' : ', SIN host'})`);
+        log(`[${roomName}] client ${peer.id} connected (${r.clients.size} in the room${r.host ? '' : ', NO host'})`);
     }
 
     socket.on('data', (chunk) => onData(peer, chunk));
@@ -272,8 +272,8 @@ server.on('upgrade', (req, socket) => {
             r.clients.delete(peer.id);
         }
         if (!r.host && r.clients.size === 0) { rooms.delete(roomName); }
-        log(`[${roomName}] ${peer.isHost ? 'HOST' : 'cliente ' + peer.id} desconectado`);
+        log(`[${roomName}] ${peer.isHost ? 'HOST' : 'client ' + peer.id} disconnected`);
     });
 });
 
-server.listen(PORT, () => log('relay escuchando en el puerto ' + PORT));
+server.listen(PORT, () => log('relay listening on port ' + PORT));

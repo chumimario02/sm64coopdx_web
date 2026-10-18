@@ -33,9 +33,9 @@ void djui_paginated_update_page_buttons(struct DjuiPaginated* paginated) {
 
     char pageNumString[32] = { 0 };
     snprintf(pageNumString, 32, "%d/%d", paginated->startIndex / paginated->showCount + 1, (count - 1) / paginated->showCount + 1);
-    // OJO: usar los botones de ESTE paginado (no variables globales), porque si
-    // hay dos paginados vivos a la vez (o uno se destruye), las globales apuntan
-    // a memoria que ya no existe.
+    // NOTE: use the buttons of THIS paginated (not global variables), because if
+    // two paginated lists are alive at the same time (or one is destroyed), the
+    // globals point to memory that no longer exists.
     if (paginated->pageNumText != NULL) {
         djui_text_set_text(paginated->pageNumText, pageNumString);
         djui_base_set_visible(&paginated->pageNumText->base, (count > paginated->showCount));
