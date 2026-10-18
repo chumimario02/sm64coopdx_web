@@ -55,6 +55,37 @@
   #fullscreen { position:fixed; right:12px; bottom:12px; z-index:20; display:none; width:44px; height:44px;
                 border:0; border-radius:10px; background:#ffffff1a; color:#fff; font-size:20px; cursor:pointer; }
   #fullscreen.visible { display:block; }
+
+  /* --- touch controls (phones and tablets) --- */
+  #touchToggle { position:fixed; right:12px; bottom:64px; z-index:30; padding:9px 13px; border:0; border-radius:10px;
+                 background:#ffffff1f; color:#fff; font-size:13px; font-weight:800; cursor:pointer;
+                 box-shadow:0 2px 8px #0008; }
+  #touchToggle.on { background:#3ddc84; color:#062510; }
+  #touchpad { position:fixed; inset:0; z-index:24; display:none; pointer-events:none; touch-action:none;
+              -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent; }
+  #touchpad.visible { display:block; }
+  body.loading #touchpad { display:none !important; }
+  #touchpad .btn { display:flex; align-items:center; justify-content:center; border:2px solid #ffffff66;
+                   border-radius:50%; background:#0b1020aa; color:#fff; font-weight:900; pointer-events:auto;
+                   touch-action:none; -webkit-tap-highlight-color:transparent; }
+  #touchpad .btn.down { background:#ffd23fee; color:#10131a; border-color:#fff; transform:scale(.94); }
+  #touchpad .btn.sm { width:11vmin; height:11vmin; font-size:3.2vmin; }
+  #touchpad .btn.md { width:14vmin; height:14vmin; font-size:4.2vmin; }
+  #touchpad .btn.lg { width:17vmin; height:17vmin; font-size:5vmin; }
+  #touchpad .btn.pill { width:auto; min-width:15vmin; height:9vmin; border-radius:5vmin; font-size:2.9vmin; }
+  #stick { position:absolute; left:4vmin; bottom:4vmin; width:36vmin; height:36vmin; border-radius:50%;
+           border:2px solid #ffffff44; background:#ffffff12; pointer-events:auto; touch-action:none; }
+  #stickKnob { position:absolute; left:50%; top:50%; width:16vmin; height:16vmin; margin:-8vmin 0 0 -8vmin;
+               border-radius:50%; border:2px solid #ffffff88; background:#ffffff4d; }
+  #right { position:absolute; right:3vmin; bottom:3vmin; display:flex; flex-direction:column; align-items:center; gap:2vmin; }
+  #touchpad .row { display:flex; align-items:flex-end; gap:2vmin; }
+  #cpad { display:grid; grid-template-columns:repeat(3, 10vmin); grid-template-rows:repeat(3, 10vmin); place-items:center; }
+  #cpad .btn { width:9.5vmin; height:9.5vmin; font-size:2.6vmin; }
+  #cpad span.lbl { color:#ffffff77; font-size:2.4vmin; font-weight:800; }
+  #rotate { position:fixed; left:50%; top:8px; transform:translateX(-50%); z-index:31; display:none; padding:8px 14px;
+            border-radius:10px; background:#ffd23fe6; color:#10131a; font-weight:800; font-size:3.4vmin; pointer-events:none; }
+  #rotate.visible { display:block; }
+  body.loading #rotate { display:none !important; }
 </style>
 </head>
 <body class="loading">
@@ -81,6 +112,32 @@
 </div>
 
 <button id="fullscreen" title="Fullscreen">⛶</button>
+
+<!-- On-screen N64 pad for phones and tablets. The state lives in
+     globalThis.__sm64touch and the game reads it (controller_keyboard.c). -->
+<button id="touchToggle" title="On-screen controls for phones">🎮 Touch controls</button>
+
+<div id="touchpad">
+  <div id="stick"><i id="stickKnob"></i></div>
+  <div id="right">
+    <div class="row">
+      <button class="btn pill" data-btn="l">L</button>
+      <button class="btn pill" data-btn="start">START</button>
+      <button class="btn pill" data-btn="r">R</button>
+    </div>
+    <div id="cpad">
+      <span></span><button class="btn" data-btn="cup">▲</button><span></span>
+      <button class="btn" data-btn="cleft">◀</button><span class="lbl">C</span><button class="btn" data-btn="cright">▶</button>
+      <span></span><button class="btn" data-btn="cdown">▼</button><span></span>
+    </div>
+    <div class="row">
+      <button class="btn sm" data-btn="z">Z</button>
+      <button class="btn md" data-btn="b">B</button>
+      <button class="btn lg" data-btn="a">A</button>
+    </div>
+  </div>
+</div>
+<div id="rotate">↻ Rotate your phone to landscape</div>
 
 <script>
 // ---------------------------------------------------------------------------
@@ -358,6 +415,136 @@ document.addEventListener('drop', function (e) {
   if (started) { return; }
   if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) { handleRomFile(e.dataTransfer.files[0]); }
 });
+
+// ---------------------------------------------------------------------------
+// Touch controls: an on-screen N64 pad for phones and tablets.
+//
+// The page keeps the pad state in globalThis.__sm64touch and the game reads it
+// from there (see controller_keyboard.c). Nothing here fakes key presses, so it
+// keeps working no matter which keys the player has bound, and the stick stays
+// analog (any direction, any speed) instead of "full speed or nothing".
+//
+// Every finger is tracked on its own (pointer events), so you can hold A while
+// moving the stick, or run and turn the camera at the same time.
+// ---------------------------------------------------------------------------
+var TOUCH_STORE = 'sm64touch';
+var TOUCH_BITS = {
+  a: 0x8000, b: 0x4000, z: 0x2000, start: 0x1000,
+  cup: 0x0008, cdown: 0x0004, cleft: 0x0002, cright: 0x0001,
+  l: 0x0020, r: 0x0010
+};
+var touchPad = { buttons: 0, stickX: 0, stickY: 0 };
+globalThis.__sm64touch = touchPad;
+
+var elTouchToggle = document.getElementById('touchToggle');
+var elTouchPad    = document.getElementById('touchpad');
+var elStick       = document.getElementById('stick');
+var elKnob        = document.getElementById('stickKnob');
+var elRotate      = document.getElementById('rotate');
+
+var touchEnabled = false;
+try { touchEnabled = localStorage.getItem(TOUCH_STORE) === '1'; } catch (e) {}
+
+function touchReleaseAll() {
+  touchPad.buttons = 0;
+  touchPad.stickX = 0;
+  touchPad.stickY = 0;
+  if (elKnob) { elKnob.style.transform = 'translate(0,0)'; }
+  var down = document.querySelectorAll('#touchpad .btn.down');
+  for (var i = 0; i < down.length; i++) { down[i].classList.remove('down'); }
+}
+
+function touchCheckRotate() {
+  var portrait = (window.innerHeight > window.innerWidth * 1.05);
+  elRotate.className = (touchEnabled && portrait) ? 'visible' : '';
+}
+
+function touchSetEnabled(on) {
+  touchEnabled = !!on;
+  try { localStorage.setItem(TOUCH_STORE, touchEnabled ? '1' : '0'); } catch (e) {}
+  elTouchPad.className = touchEnabled ? 'visible' : '';
+  elTouchToggle.className = touchEnabled ? 'on' : '';
+  elTouchToggle.textContent = touchEnabled ? '🎮 Touch: ON' : '🎮 Touch controls';
+  if (!touchEnabled) { touchReleaseAll(); }
+  touchCheckRotate();
+}
+
+// --- the stick -------------------------------------------------------------
+var stickPointer = null;
+var stickBox = null;
+
+function stickUpdate(ev) {
+  if (!stickBox) { return; }
+  var r = Math.min(stickBox.width, stickBox.height) / 2;
+  var dx = ev.clientX - (stickBox.left + stickBox.width / 2);
+  var dy = ev.clientY - (stickBox.top + stickBox.height / 2);
+  var d = Math.sqrt(dx * dx + dy * dy);
+  if (d > r) { dx = dx / d * r; dy = dy / d * r; }
+  var nx = dx / r, ny = dy / r;
+  if (nx * nx + ny * ny < 0.02) { nx = 0; ny = 0; }   // small dead zone for a resting thumb
+  touchPad.stickX = Math.round(nx * 127);
+  touchPad.stickY = Math.round(-ny * 127);            // screen down = stick down
+  elKnob.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+}
+
+if (elStick) {
+  elStick.addEventListener('pointerdown', function (ev) {
+    ev.preventDefault();
+    stickPointer = ev.pointerId;
+    stickBox = elStick.getBoundingClientRect();
+    try { elStick.setPointerCapture(ev.pointerId); } catch (e) {}
+    stickUpdate(ev);
+  });
+  elStick.addEventListener('pointermove', function (ev) {
+    if (ev.pointerId === stickPointer) { stickUpdate(ev); }
+  });
+  ['pointerup', 'pointercancel'].forEach(function (type) {
+    elStick.addEventListener(type, function (ev) {
+      if (ev.pointerId !== stickPointer) { return; }
+      stickPointer = null;
+      touchPad.stickX = 0;
+      touchPad.stickY = 0;
+      elKnob.style.transform = 'translate(0,0)';
+    });
+  });
+}
+
+// --- the buttons -----------------------------------------------------------
+var touchPointers = {};
+var touchButtons = document.querySelectorAll('#touchpad .btn[data-btn]');
+
+for (var tb = 0; tb < touchButtons.length; tb++) {
+  (function (btn) {
+    var bit = TOUCH_BITS[btn.getAttribute('data-btn')] || 0;
+    function press(ev) {
+      ev.preventDefault();
+      if (!bit) { return; }
+      touchPointers[ev.pointerId] = btn;
+      btn.classList.add('down');
+      touchPad.buttons |= bit;
+      try { btn.setPointerCapture(ev.pointerId); } catch (e) {}
+    }
+    function release(ev) {
+      if (touchPointers[ev.pointerId] !== btn) { return; }
+      delete touchPointers[ev.pointerId];
+      btn.classList.remove('down');
+      touchPad.buttons &= ~bit;
+    }
+    btn.addEventListener('pointerdown', press);
+    btn.addEventListener('pointerup', release);
+    btn.addEventListener('pointercancel', release);
+    btn.addEventListener('lostpointercapture', release);
+    btn.addEventListener('contextmenu', function (ev) { ev.preventDefault(); });
+  })(touchButtons[tb]);
+}
+
+if (elTouchToggle) {
+  elTouchToggle.addEventListener('click', function () { touchSetEnabled(!touchEnabled); });
+}
+window.addEventListener('resize', touchCheckRotate);
+window.addEventListener('orientationchange', touchCheckRotate);
+document.addEventListener('visibilitychange', function () { if (document.hidden) { touchReleaseAll(); } });
+touchSetEnabled(touchEnabled);
 
 // ---------------------------------------------------------------------------
 // Module object consumed by the .js generated by Emscripten.

@@ -15,6 +15,39 @@
 #include "pc/djui/djui.h"
 #include "pc/djui/djui_panel_pause.h"
 
+#ifdef TARGET_WEB
+#include <emscripten.h>
+
+// ---------------------------------------------------------------------------
+// Touch controls (phones and tablets)
+//
+// The web page shows an on-screen N64 pad and keeps its state in
+// globalThis.__sm64touch = { buttons, stickX, stickY }, where "buttons" is the
+// usual N64 bit mask (A_BUTTON, Z_TRIG, U_CBUTTONS...) and the stick goes from
+// -128 to 127. Reading it here, instead of faking key presses, means the page
+// never has to know which key each button is bound to, and the stick stays
+// analog (proper walking speed) instead of "full speed or nothing".
+//
+// It is merged with the keyboard, so both can even be used at the same time.
+// ---------------------------------------------------------------------------
+
+EM_JS(int, web_touch_buttons, (void), {
+    var T = globalThis.__sm64touch;
+    return T ? (T.buttons | 0) : 0;
+});
+
+EM_JS(int, web_touch_axis, (int which), {
+    var T = globalThis.__sm64touch;
+    if (!T) { return 0; }
+    var v = which ? T.stickY : T.stickX;
+    if (typeof v !== 'number' || !isFinite(v)) { return 0; }
+    var r = Math.round(v);
+    if (r > 127) { r = 127; }
+    if (r < -128) { r = -128; }
+    return r | 0;
+});
+#endif
+
 static int keyboard_buttons_down;
 
 #define MAX_KEYBINDS 64
@@ -122,6 +155,19 @@ static void keyboard_read(OSContPad *pad) {
         pad->stick_y = -128;
     else if (ystick == STICK_UP)
         pad->stick_y = 127;
+
+#ifdef TARGET_WEB
+    // On-screen pad of the web page (touch controls). It wins over the keyboard
+    // only for what the player is actually pressing.
+    const int touchButtons = web_touch_buttons();
+    if (touchButtons != 0) {
+        pad->button |= (u16) touchButtons;
+    }
+    const int touchX = web_touch_axis(0);
+    const int touchY = web_touch_axis(1);
+    if (touchX != 0) { pad->stick_x = (s8) touchX; }
+    if (touchY != 0) { pad->stick_y = (s8) touchY; }
+#endif
 }
 
 static u32 keyboard_rawkey(void) {

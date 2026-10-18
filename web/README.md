@@ -27,6 +27,14 @@ details of the build.
 * **Mods**: the "open folder" buttons open a picker for a mod folder or `.zip`
   files, and the game's own importer takes it from there (see
   [Mods](#mods)).
+* **Touch controls**: the page can show an on-screen N64 pad (stick plus A, B, Z,
+  L, R, START and the four C buttons) for phones and tablets. The **Touch
+  controls** button sits in the bottom right corner and the choice is remembered.
+  The page only writes the pad state into `globalThis.__sm64touch`
+  (`{ buttons, stickX, stickY }`, the usual N64 bit mask) and the game reads it
+  in `controller_keyboard.c`: no key presses are faked, so rebinding keys does
+  not break it, and the stick stays analog. It is merged with the keyboard, so
+  both can be used at the same time.
 * Only the loading screen shows at first; the game takes over once you press PLAY.
 
 ## Build
