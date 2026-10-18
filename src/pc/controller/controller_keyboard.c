@@ -49,10 +49,12 @@ EM_JS(int, web_touch_axis, (int which), {
     return r | 0;
 });
 
-// One shot actions (the chat button and the send key, for now). The page queues
-// them in globalThis.__sm64touch.actions and the game drains them further down.
+// One shot actions (the chat button, the send key and deleting). The page
+// queues them in globalThis.__sm64touch.actions and the game drains them
+// further down.
 #define WEB_TOUCH_ACTION_CHAT 1
 #define WEB_TOUCH_ACTION_SEND 2
+#define WEB_TOUCH_ACTION_DELETE 3
 
 EM_JS(int, web_touch_action, (void), {
     var T = globalThis.__sm64touch;
@@ -224,6 +226,11 @@ static void keyboard_read(OSContPad *pad) {
             // button. Phone keyboards swallow Enter while they are composing a
             // word, so the page has a button of its own for it.
             djui_interactable_on_key_down(SCANCODE_ENTER);
+        } else if (touchAction == WEB_TOUCH_ACTION_DELETE) {
+            // Same as pressing Backspace. Phone keyboards also keep Backspace
+            // while composing a word (it only edits their own word), so the page
+            // tells us about it by comparing the text of its hidden input.
+            djui_interactable_on_key_down(SCANCODE_BACKSPACE);
         }
         touchAction = web_touch_action();
     }

@@ -48,9 +48,9 @@ details of the build.
   `controller_keyboard.c`) straight into the game's text boxes, instead of
   through SDL: SDL only accepts text while the game has text input started, and
   phone keyboards work by composition (IME/autocorrect), where the characters
-  never reach SDL at all. Enter is taken from the keyboard for the same reason
-  (phone keyboards use it to end the word they are composing) and sent as the
-  `SEND` action.
+  never reach SDL at all. Enter and Backspace are taken from the keyboard for
+  the same reason (phone keyboards use Enter to end the word they are composing
+  and Backspace to edit it) and sent as the `SEND` and `DELETE` actions.
 * Only the loading screen shows at first; the game takes over once you press PLAY.
 
 ## Build

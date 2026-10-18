@@ -517,7 +517,7 @@ function kbdShow(show) {
 // middle), so instead of trusting the events we compare the field's text with
 // what it had a moment ago and queue whatever is new. The game reads that queue
 // (see controller_keyboard.c), so it does not matter which keyboard is used.
-var kbdLast = '';
+var kbdChars = [];                      // los caracteres que hay ahora en el campo
 
 // The game reads UTF-8 bytes, one character at a time (emoji included).
 function kbdBytes(ch) {
@@ -529,37 +529,44 @@ function kbdBytes(ch) {
 }
 
 function kbdCollect(ev) {
-  var value = elKbd.value;
+  var now = Array.from(elKbd.value);    // by characters, so emoji are not split
   var same = 0;
-  while (same < value.length && same < kbdLast.length && value.charAt(same) === kbdLast.charAt(same)) { same++; }
-  var added = value.slice(same);
-  var chars = Array.from(added);          // by characters, so emoji are not split
-  for (var i = 0; i < chars.length; i++) { touchPad.text.push(kbdBytes(chars[i])); }
-  kbdLast = value;
-  // While the keyboard is composing a word we leave the field alone (emptying it
-  // would confuse it); once the word is done we start over so the text does not
-  // pile up. Deleting is left to the keyboard itself (it sends Backspace).
-  if (!(ev && ev.isComposing)) { elKbd.value = ''; kbdLast = ''; }
+  while (same < now.length && same < kbdChars.length && now[same] === kbdChars[same]) { same++; }
+  // What is gone is a deletion and what is new is text. Comparing the field with
+  // how it was a moment ago works with any keyboard: some of them (Android's,
+  // with autocorrect) keep Backspace and Enter for themselves while they compose
+  // a word, so those keys never reach the game on their own.
+  for (var d = same; d < kbdChars.length; d++) { touchPad.actions.push(3); }   // 3 = delete
+  for (var a = same; a < now.length; a++) { touchPad.text.push(kbdBytes(now[a])); }
+  kbdChars = now;
 }
 
-function kbdReset() { elKbd.value = ''; kbdLast = ''; }
+// The field is left as it is on purpose: it mirrors what the game has, so
+// deleting always has something to delete. It is emptied when the chat closes.
+function kbdReset() { elKbd.value = ''; kbdChars = []; }
 
 if (elKbd) {
-  // Phone keyboards often keep Enter for themselves (it just ends the word they
-  // are composing), so it never reaches the game and the message is never sent.
-  // We take it here and queue the "send" action ourselves.
   elKbd.addEventListener('keydown', function (ev) {
+    // Phone keyboards often keep Enter for themselves (it just ends the word they
+    // are composing), so it never reaches the game and the message is never sent.
+    // We take it here and queue the "send" action ourselves.
     if (ev.key === 'Enter' || ev.code === 'Enter' || ev.code === 'NumpadEnter') {
       ev.preventDefault();
       ev.stopPropagation();
       touchPad.actions.push(2);       // 2 = send (see controller_keyboard.c)
+      return;
+    }
+    // Deleting is ours as well: the field loses the character and kbdCollect turns
+    // that into a backspace for the game. We only keep SDL out of it, or the game
+    // would delete twice.
+    if (ev.key === 'Backspace' || ev.key === 'Delete' || ev.code === 'Backspace' || ev.code === 'Delete') {
+      ev.stopPropagation();
     }
   });
   // Let SDL keep its own copy of the text out of the way: the game gets it from
   // the queue above, so nothing is typed twice.
   elKbd.addEventListener('keypress', function (ev) { ev.stopPropagation(); });
   elKbd.addEventListener('input', function (ev) { kbdCollect(ev); });
-  elKbd.addEventListener('compositionend', function () { kbdReset(); });
   elKbd.addEventListener('blur', function () {
     kbdReset();
     touchPad.text.length = 0;
@@ -602,7 +609,13 @@ setInterval(function () {
   if (open === chatWasOpen) { return; }
   chatWasOpen = open;
   if (open) { kbdFromChat = true; kbdShow(true); }
-  else if (kbdFromChat) { kbdFromChat = false; kbdShow(false); }
+  else if (kbdFromChat) {
+    kbdFromChat = false;
+    kbdShow(false);
+    // The chat is empty again, so the field starts over too (and keeps mirroring
+    // what the game has, which is what deleting relies on).
+    kbdReset();
+  }
 }, 250);
 
 // --- the stick -------------------------------------------------------------
