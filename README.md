@@ -120,7 +120,7 @@ More details of the build and of the deployment in [web/README.md](web/README.md
 * Single-threaded and GLES2: it is slower than the desktop build on the same machine.
 * Online play needs the relay; there is no peer-to-peer path.
 * The relay is a dumb forwarder: one host per room name, and everyone in a room receives everyone's packets.
-* Tested on desktop Chrome and Edge. Other browsers are untested, and there are no touch controls (keyboard works; a gamepad should work through SDL2, untested).
+* Tested on desktop Chrome and Edge. Other browsers are untested (keyboard works; a gamepad should work through SDL2, untested).
 
 ## Credits
 
