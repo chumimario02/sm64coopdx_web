@@ -63,9 +63,11 @@ static bool is_rom_valid(const std::string romPath) {
 
             // Copy the rom to the user path
             if (romPath != destPath && !std::filesystem::exists(std::filesystem::path(destPath))) {
+                std::error_code ec;
                 std::filesystem::copy_file(
                     std::filesystem::path(romPath),
-                    std::filesystem::path(destPath)
+                    std::filesystem::path(destPath),
+                    ec
                 );
             }
 
@@ -79,8 +81,14 @@ static bool is_rom_valid(const std::string romPath) {
 }
 
 inline static bool scan_path_for_rom(const char *dir) {
-    for (const auto &entry: std::filesystem::directory_iterator(dir)) {
-        std::string path = entry.path().generic_string();
+    // Un directorio vacio o inexistente no debe lanzar excepcion: Emscripten compila
+    // sin excepciones C++ (un throw equivale a abort). Ademas en el navegador
+    // sys_exe_path_dir() devuelve "" porque no existe /proc/self/exe.
+    if (dir == NULL || dir[0] == '\0') { return false; }
+
+    std::error_code ec;
+    for (std::filesystem::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec)) {
+        std::string path = it->path().generic_string();
         if (path_ends_with(path.c_str(), ".z64")) {
             if (is_rom_valid(path)) { return true; }
         }

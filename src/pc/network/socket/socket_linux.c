@@ -1,4 +1,4 @@
-#ifndef WINSOCK
+#if !defined(WINSOCK) && !defined(TARGET_WEB)
 #include "socket_linux.h"
 #include "../network.h"
 #include "pc/debuglog.h"

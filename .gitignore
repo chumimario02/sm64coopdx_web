@@ -92,3 +92,26 @@ todo-old.txt
 tools/ido5.3_compiler/usr/lib/libc.so.1
 /.vs
 tools/audiofile/libaudiofile.a
+
+# ---------------------------------------------------------------------------
+# Puerto web (Emscripten) - chumimario02
+# ---------------------------------------------------------------------------
+# La carpeta build/ lleva dentro el ROM embebido (.data): NUNCA se sube
+build/
+build-*/*.data
+
+# ROMs y copias del juego comercial: jamas al repositorio
+*.z64
+*.n64
+*.v64
+*.smd
+*.smc
+*.nes
+*.ndd
+baserom.*
+
+# extras
+node_modules/
+__pycache__/
+*.log
+.vscode/

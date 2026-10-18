@@ -2,7 +2,7 @@
 #if defined(_WIN32)
 #include <windows.h>
 #include <wininet.h>
-#else
+#elif !defined(__EMSCRIPTEN__)
 #include <curl/curl.h>
 #endif
 
@@ -104,6 +104,11 @@ void parse_version(const char *data) {
 void get_version_remote(void) {
     sRemoteVersionStr[0] = '\0';
 
+#ifdef __EMSCRIPTEN__
+    // En el navegador no hay libcurl ni wininet: se omite la descarga. El resto del
+    // archivo (comparacion de versiones, popup) se sigue usando normalmente.
+    return;
+#else
 #if defined(_WIN32)
     char buffer[0xFF] = { 0 };
 
@@ -176,6 +181,7 @@ void get_version_remote(void) {
 #if !(defined(_WIN32) || defined(_WIN64))
     free(buffer);
 #endif
+#endif // !__EMSCRIPTEN__
 }
 
 void check_for_updates(void) {

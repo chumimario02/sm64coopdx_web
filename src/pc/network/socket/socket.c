@@ -81,6 +81,10 @@ void resolve_domain(struct sockaddr_in6 *addr) {
 }
 
 static int socket_bind(SOCKET socket, unsigned int port) {
+#ifdef TARGET_WEB
+    (void)socket;
+    return webnet_bind(port);
+#else
     struct sockaddr_in6 rxAddr;
     // Clean struct to prevent rare cases of binding errors due to garbage data in that memory location. This just happened to me randomly on Windows and left me very confused.
     memset(&rxAddr, 0, sizeof(struct sockaddr_in6));
@@ -95,9 +99,14 @@ static int socket_bind(SOCKET socket, unsigned int port) {
     }
 
     return rc;
+#endif
 }
 
 static int socket_send(SOCKET socket, struct sockaddr_in6* addr, u8* buffer, u16 bufferLength) {
+#ifdef TARGET_WEB
+    (void)socket;
+    return webnet_send(addr, buffer, bufferLength);
+#else
     int addrSize = sizeof(struct sockaddr_in6);
     int rc = sendto(socket, (char*)buffer, bufferLength, 0, (struct sockaddr*)addr, addrSize);
     if (rc != SOCKET_ERROR) { return NO_ERROR; }
@@ -107,20 +116,21 @@ static int socket_send(SOCKET socket, struct sockaddr_in6* addr, u8* buffer, u16
 
     LOG_ERROR("sendto failed with error: %d", error);
     return rc;
+#endif
 }
 
 static int socket_receive(SOCKET socket, struct sockaddr_in6* rxAddr, u8* buffer, u16 bufferLength, u16* receiveLength, u8* localIndex) {
     *receiveLength = 0;
 
+#ifdef TARGET_WEB
+    (void)socket;
+    // Datagrama traido del relay por WebSocket (o nada, si no hay relay).
+    if (webnet_receive(rxAddr, buffer, bufferLength, receiveLength) != NO_ERROR) {
+        return SOCKET_ERROR;
+    }
+#else
     RX_ADDR_SIZE_TYPE rxAddrSize = sizeof(struct sockaddr_in6);
     int rc = recvfrom(socket, (char*)buffer, bufferLength, 0, (struct sockaddr*)rxAddr, &rxAddrSize);
-
-    for (int i = 1; i < MAX_PLAYERS; i++) {
-        if (memcmp(rxAddr, &sAddr[i], sizeof(struct sockaddr_in6)) == 0) {
-            *localIndex = i;
-            break;
-        }
-    }
 
     if (rc == SOCKET_ERROR) {
         int error = SOCKET_LAST_ERROR;
@@ -131,6 +141,15 @@ static int socket_receive(SOCKET socket, struct sockaddr_in6* rxAddr, u8* buffer
     }
 
     *receiveLength = rc;
+#endif
+
+    for (int i = 1; i < MAX_PLAYERS; i++) {
+        if (memcmp(rxAddr, &sAddr[i], sizeof(struct sockaddr_in6)) == 0) {
+            *localIndex = i;
+            break;
+        }
+    }
+
     return NO_ERROR;
 }
 
@@ -139,12 +158,20 @@ static bool ns_socket_initialize(enum NetworkType networkType, UNUSED bool recon
     unsigned int port = (networkType == NT_CLIENT) ? configJoinPort : configHostPort;
     if (port == 0) { port = DEFAULT_PORT; }
 
+#ifdef TARGET_WEB
+    // En el navegador no hay sockets UDP: nos conectamos al relay (el host abre
+    // su sala, el cliente se une a la sala escrita en el menu). Si el relay no
+    // responde, el juego continua igual y se juega en solitario (0 clientes).
+    webnet_begin(networkType);
+#endif
+
     // create a receiver socket to receive datagrams
     sCurSocket = socket_initialize();
     if (sCurSocket == INVALID_SOCKET) { return false; }
 
     // connect
     if (networkType == NT_SERVER) {
+#ifndef TARGET_WEB
         int reuse = 1;
         if (setsockopt(sCurSocket, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuse, sizeof(reuse)) < 0) {
             LOG_ERROR("setsockopt(SO_REUSEADDR) failed");
@@ -155,6 +182,7 @@ static bool ns_socket_initialize(enum NetworkType networkType, UNUSED bool recon
             LOG_ERROR("setsockopt(SO_REUSEPORT) failed");
         }
 #endif
+#endif
         // bind the socket to any address and the specified port.
         int rc = socket_bind(sCurSocket, port);
         if (rc != NO_ERROR) {
@@ -163,6 +191,13 @@ static bool ns_socket_initialize(enum NetworkType networkType, UNUSED bool recon
         }
         LOG_INFO("bound to port %u", port);
     } else if (networkType == NT_CLIENT) {
+#ifdef TARGET_WEB
+        // En web no hay DNS: lo que el jugador escribe en el campo "IP" es el
+        // NOMBRE DE LA SALA, y la direccion virtual del host ya la conocemos (id 1).
+        webnet_make_host_addr(&sAddr[0]);
+        sAddr[0].sin6_port = htons(port);
+        LOG_INFO("uniendose a la sala '%s'", configJoinIp);
+#else
         struct sockaddr_in6 addr;
         // set and clean struct to prevent garbage data
         memset(&addr, 0, sizeof(struct sockaddr_in6));
@@ -175,6 +210,7 @@ static bool ns_socket_initialize(enum NetworkType networkType, UNUSED bool recon
         LOG_INFO("connecting to %s, port %u", configJoinIp, port);
         // copy hostname to be saved to config file
         snprintf(configJoinIp, MAX_CONFIG_STRING, "%s", gGetHostName);
+#endif
 
         // kick off first packet
         char joinText[128] = { 0 };

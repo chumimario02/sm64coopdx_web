@@ -1560,7 +1560,7 @@ Gfx *geo_switch_bowser_eyes(s32 run, struct GraphNode *node, UNUSED Mat4 *mtx) {
     return NULL;
 }
 
-Gfx *geo_bits_bowser_coloring(s32 run, struct GraphNode *node, UNUSED s32 a2) {
+Gfx *geo_bits_bowser_coloring(s32 run, struct GraphNode *node, UNUSED void *a2) {
     Gfx *sp2C = NULL;
     Gfx *sp28;
     struct Object *sp24;

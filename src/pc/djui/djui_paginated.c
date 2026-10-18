@@ -33,11 +33,20 @@ void djui_paginated_update_page_buttons(struct DjuiPaginated* paginated) {
 
     char pageNumString[32] = { 0 };
     snprintf(pageNumString, 32, "%d/%d", paginated->startIndex / paginated->showCount + 1, (count - 1) / paginated->showCount + 1);
-    djui_text_set_text(sPageNumText, pageNumString);
-    djui_base_set_visible(&sPageNumText->base, (count > paginated->showCount));
+    // OJO: usar los botones de ESTE paginado (no variables globales), porque si
+    // hay dos paginados vivos a la vez (o uno se destruye), las globales apuntan
+    // a memoria que ya no existe.
+    if (paginated->pageNumText != NULL) {
+        djui_text_set_text(paginated->pageNumText, pageNumString);
+        djui_base_set_visible(&paginated->pageNumText->base, (count > paginated->showCount));
+    }
 
-    djui_base_set_enabled(&sPrevButton->base, (paginated->startIndex > 0));
-    djui_base_set_enabled(&sNextButton->base, ((paginated->startIndex + paginated->showCount) < count));
+    if (paginated->prevButton != NULL) {
+        djui_base_set_enabled(&paginated->prevButton->base, (paginated->startIndex > 0));
+    }
+    if (paginated->nextButton != NULL) {
+        djui_base_set_enabled(&paginated->nextButton->base, ((paginated->startIndex + paginated->showCount) < count));
+    }
 }
 
 static void djui_paginated_prev(struct DjuiBase* base) {
@@ -172,6 +181,7 @@ struct DjuiPaginated* djui_paginated_create(struct DjuiBase* parent, u32 showCou
     paginated->prevButton = sPrevButton;
 
     sPageNumText = djui_text_create(&paginated->base, "");
+    paginated->pageNumText = sPageNumText;
     djui_base_set_color(&sPageNumText->base, 220, 220, 220, 255);
     djui_base_set_alignment(&sPageNumText->base, DJUI_HALIGN_CENTER, DJUI_VALIGN_BOTTOM);
     djui_text_set_alignment(sPageNumText, DJUI_HALIGN_CENTER, DJUI_VALIGN_TOP);

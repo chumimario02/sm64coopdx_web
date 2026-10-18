@@ -36,6 +36,9 @@ TARGET_RPI ?= 0
 # Build and optimize for RK3588 processor
 TARGET_RK3588 ?= 0
 
+# Build for the web with Emscripten
+TARGET_WEB ?= 0
+
 # Makeflag to enable OSX fixes
 OSX_BUILD ?= 0
 
@@ -318,6 +321,14 @@ ifeq ($(TARGET_RK3588),1)
   OPT_FLAGS := -march=armv8.2-a+crc+simd -mtune=cortex-a76 -O3
 endif
 
+ifeq ($(TARGET_WEB),1)
+  $(info Compilando para la web con Emscripten...)
+  # Estos SDKs son binarios nativos (DLL/.so/.dylib): no pueden existir en WebAssembly
+  DISCORD_SDK := 0
+  COOPNET     := 0
+  UPDATER     := 0
+endif
+
 # Set BITS (32/64) to compile for
 OPT_FLAGS += $(BITS)
 
@@ -355,6 +366,10 @@ endif
 
 ifeq ($(TARGET_RK3588),1) # Define RK3588 to change SDL2 title & GLES2 hints
   DEFINES += USE_GLES=1
+endif
+
+ifeq ($(TARGET_WEB),1) # El navegador solo tiene WebGL (= OpenGL ES 2): mismos shaders que la RPi
+  DEFINES += USE_GLES=1 TARGET_WEB=1
 endif
 
 ifeq ($(OSX_BUILD),1) # Modify GFX & SDL2 for OSX GL
@@ -519,6 +534,17 @@ ifeq ($(TARGET_N64),0)
 
 	C_FILES           := $(filter-out src/game/main.c,$(C_FILES))
 	ULTRA_C_FILES     := $(addprefix lib/src/,$(ULTRA_C_FILES))
+endif
+
+#==============================================================================#
+# Web build (Emscripten, make TARGET_WEB=1)                                    #
+#==============================================================================#
+
+ifeq ($(TARGET_WEB),1)
+  # El auto-actualizador usa libcurl (Linux) o wininet (Windows): en el navegador no
+  # existe ninguno de los dos. NO se excluye el archivo, porque al quitarlo del enlazado
+  # faltaban check_for_updates() y show_update_popup() (que usa pc_main.c). En su lugar
+  # update_checker.c se compila con la descarga desactivada (bloque #ifdef __EMSCRIPTEN__).
 endif
 
 # Sound files
@@ -741,18 +767,42 @@ endif
 SDLCONFIG := $(CROSS)sdl2-config
 BACKEND_CFLAGS += -DHAVE_SDL2=1
 
-ifeq ($(OSX_BUILD),1)
-  # on OSX at least the homebrew version of sdl-config gives include path as `.../include/SDL2` instead of `.../include`
-  OSX_PREFIX := $(shell $(SDLCONFIG) --prefix)
-  BACKEND_CFLAGS += -I$(OSX_PREFIX)/include $(shell $(SDLCONFIG) --cflags)
+ifeq ($(TARGET_WEB),1)
+  # Emscripten trae su propio SDL2 como "port" oficial (misma version 2.32.10).
+  #
+  # ATENCION - esto era el bug que impedia que el juego arrancase:
+  # el sdl2-config de MSYS2 anade "-Dmain=SDL_main" a los CFLAGS y "-lSDL2main"
+  # a los LDFLAGS. Al renombrar main() a SDL_main() y no enlazar SDL2main, el
+  # binario se queda SIN main(): Emscripten genera un runtime que nunca llama a
+  # main() (no hay callMain en el .js), el modulo arranca y se queda ocioso para
+  # siempre, sin error visible. Con -sUSE_SDL=2 las cabeceras vienen del sysroot
+  # de Emscripten y main() sigue llamandose main().
+  BACKEND_CFLAGS  += -sUSE_SDL=2
+  BACKEND_LDFLAGS += -sUSE_SDL=2
 else
-  BACKEND_CFLAGS += `$(SDLCONFIG) --cflags`
+  ifeq ($(OSX_BUILD),1)
+    # on OSX at least the homebrew version of sdl-config gives include path as `.../include/SDL2` instead of `.../include`
+    OSX_PREFIX := $(shell $(SDLCONFIG) --prefix)
+    BACKEND_CFLAGS += -I$(OSX_PREFIX)/include $(shell $(SDLCONFIG) --cflags)
+  else
+    BACKEND_CFLAGS += `$(SDLCONFIG) --cflags`
+  endif
+
+  ifeq ($(WINDOWS_BUILD),1)
+    BACKEND_LDFLAGS += `$(SDLCONFIG) --static-libs` -lsetupapi -luser32 -limm32 -lole32 -loleaut32 -lshell32 -lshlwapi -lwinmm -lversion
+  else
+    BACKEND_LDFLAGS += `$(SDLCONFIG) --libs`
+  endif
 endif
 
-ifeq ($(WINDOWS_BUILD),1)
-  BACKEND_LDFLAGS += `$(SDLCONFIG) --static-libs` -lsetupapi -luser32 -limm32 -lole32 -loleaut32 -lshell32 -lshlwapi -lwinmm -lversion
-else
-  BACKEND_LDFLAGS += `$(SDLCONFIG) --libs`
+#==============================================================================#
+# Web build (Emscripten) specifics                                             #
+#==============================================================================#
+
+ifeq ($(TARGET_WEB),1)
+  # zlib lo aporta Emscripten como port oficial, no el sistema operativo
+  BACKEND_CFLAGS  += -sUSE_ZLIB=1
+  BACKEND_LDFLAGS += -sUSE_ZLIB=1
 endif
 
 C_DEFINES += $(foreach d,$(DEFINES),-D$(d))
@@ -969,6 +1019,74 @@ export LANG := C
 
 ifeq ($(OSX_BUILD),0)
   LDFLAGS += -latomic
+endif
+
+#==============================================================================#
+# Web build (Emscripten): el enlazado de escritorio no aplica                  #
+#==============================================================================#
+
+ifeq ($(TARGET_WEB),1)
+  # Producir un .html listo para abrir en el navegador (+ .js y .wasm)
+  EXE := $(BUILD_DIR)/sm64coopdx.html
+
+  # ---------------------------------------------------------------------------
+  # MEMORY64 (punteros de 64 bits) -> destino wasm64.
+  # MOTIVO: los datos de sonido que vienen en el repo (sound/sound_data_compressed.ctl
+  # y .tbl, sound/bank_sets_compressed, sequences) son BLOBS BINARIOS pre-generados con
+  # la disposicion en memoria de un anfitrion de 64 bits: ALSeqData mide 16 bytes
+  # (8 de puntero + 4 de len + 4 de relleno) en vez de los 8 de la N64. En wasm32 los
+  # punteros son de 4 bytes y al leer esos blobs salen desplazamientos basura -> el juego
+  # peta en patch_audio_bank(). Compilando con -m64 los bloques encajan EXACTOS.
+  # IMPORTANTE: esta linea tiene que ir DESPUES de los "CFLAGS := ..." de cada plataforma
+  # (linea ~820), o la asignacion la borra.
+  CFLAGS += -m64
+  # ---------------------------------------------------------------------------
+
+  # Se descarta TODO el LDFLAGS de escritorio (GL, curl, lua nativa, pthread,
+  # libatomic, -no-pie, linker script...) y se usan los ports de Emscripten.
+  LDFLAGS := -O2 -lm \
+             -m64 \
+             -sUSE_SDL=2 \
+             -sUSE_ZLIB=1 \
+             -sALLOW_MEMORY_GROWTH=1 \
+             -sSTACK_SIZE=5242880 \
+             -sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAP32 \
+             lib/lua/web64/liblua53.a
+  # ^ EXPORTED_RUNTIME_METHODS: Emscripten 4 ya no publica Module.HEAPxx por
+  #   defecto. Nuestro codigo de red web (EM_JS) necesita escribir en el heap
+  #   (socket_web.c); exportarlas aqui garantiza que existan y evita que una
+  #   excepcion JS deje el juego congelado.
+
+  # Opcional (solo para pruebas locales): incrustar un ROM en el propio build con
+  #   make ... WEB_ROM="/ruta/baserom.us.z64"
+  # Se coloca donde el juego lo busca (su carpeta de usuario en el sistema de
+  # ficheros virtual: SDL_GetPrefPath -> /libsdl/<app>/).
+  # OJO: ese build CONTIENE el ROM y NO debe compartirse nunca.
+  ifneq ($(WEB_ROM),)
+    LDFLAGS += --preload-file $(WEB_ROM)@/libsdl/sm64coopdx/baserom.us.z64
+  endif
+
+  # ---------------------------------------------------------------------------
+  # Recursos que el juego busca junto al ejecutable: sys_resource_path() devuelve
+  # "" en web, asi que la raiz "/" del sistema de ficheros virtual es su carpeta.
+  #   /lang/*.ini  -> textos de los menus (sin esto salen las claves en crudo:
+  #                   "SAVE_SLOT" en vez de "Save Slot")
+  #   /mods        -> mods integrados (lua + assets); MOD_DIRECTORY
+  #   /palettes    -> paletas de jugador por defecto (player_palettes_read)
+  #   /dynos       -> packs DynOS base
+  # ---------------------------------------------------------------------------
+  LDFLAGS += --preload-file lang@/lang
+  LDFLAGS += --preload-file mods@/mods
+  LDFLAGS += --preload-file palettes@/palettes
+  LDFLAGS += --preload-file dynos@/dynos
+
+  # Diagnostico: make ... WEB_DEBUG=1  -> anade nombres de funcion a los stack
+  # traces (seccion "name" del wasm) y aserciones de Emscripten.
+  # (Ojo: pedir -g hace que Binaryen optimice menos, asi que los indices de funcion
+  #  NO coinciden con el build normal; los nombres si son validos.)
+  ifneq ($(WEB_DEBUG),)
+    LDFLAGS += -g -sASSERTIONS=2
+  endif
 endif
 
 #==============================================================================#

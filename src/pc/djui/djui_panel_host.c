@@ -9,6 +9,7 @@
 #include "djui_panel_rules.h"
 #include "game/save_file.h"
 #include "pc/network/network.h"
+#include "pc/network/socket/socket.h"
 #include "pc/utils/misc.h"
 #include "pc/configfile.h"
 #include "pc/update_checker.h"
@@ -29,6 +30,11 @@ static void djui_panel_host_network_system_change(UNUSED struct DjuiBase* base) 
 
 static bool djui_panel_host_port_valid(void) {
     char* buffer = sInputboxPort->buffer;
+#ifdef TARGET_WEB
+    // En el build web este campo NO es un puerto, es el NOMBRE DE LA SALA:
+    // vale cualquier texto que no este vacio.
+    return (buffer != NULL && strlen(buffer) > 0);
+#else
     int port = 0;
     while (*buffer != '\0') {
         if (*buffer < '0' || *buffer > '9') { return false; }
@@ -40,6 +46,7 @@ static bool djui_panel_host_port_valid(void) {
     return port >= 1024 && port <= 65535;
 #else
     return port <= 65535;
+#endif
 #endif
 }
 
@@ -76,11 +83,25 @@ static void djui_panel_host_do_host(struct DjuiBase* caller) {
         return;
     }
 
+#ifdef TARGET_WEB
+    // En web el campo no es un puerto: es el nombre de la sala que se comparte
+    // con los amigos (el relay la usa para juntar a los jugadores).
+    snprintf(gWebRoomName, sizeof(gWebRoomName), "%s", sInputboxPort->buffer);
+#else
     configHostPort = atoi(sInputboxPort->buffer);
+#endif
+
+#ifdef TARGET_WEB
+    // En web no existe el problema de "abrir puertos en el router": de eso se
+    // encarga el relay. Asi que no hace falta el aviso de socket de siempre.
+    const bool skipSocketWarning = true;
+#else
+    const bool skipSocketWarning = (configNetworkSystem == NS_COOPNET || configAmountOfPlayers == 1 || configHideSocketWarning);
+#endif
 
     if (gNetworkType == NT_SERVER) {
         network_rehost_begin();
-    } else if (configNetworkSystem == NS_COOPNET || configAmountOfPlayers == 1 || configHideSocketWarning) {
+    } else if (skipSocketWarning) {
         network_reset_reconnect_and_rehost();
         djui_panel_do_host(false, true);
     } else {
@@ -109,7 +130,11 @@ void djui_panel_host_create(struct DjuiBase* caller) {
             djui_base_set_location(&sRectPort->base, 0, 0);
             djui_base_set_visible(&sRectPort->base, (configNetworkSystem == NS_SOCKET));
             {
+#ifdef TARGET_WEB
+                struct DjuiText* text1 = djui_text_create(&sRectPort->base, DLANG(HOST, ROOM));
+#else
                 struct DjuiText* text1 = djui_text_create(&sRectPort->base, DLANG(HOST, PORT));
+#endif
                 djui_base_set_size_type(&text1->base, DJUI_SVT_RELATIVE, DJUI_SVT_ABSOLUTE);
                 djui_base_set_color(&text1->base, 220, 220, 220, 255);
                 djui_base_set_size(&text1->base, 0.585f, 64);
@@ -123,9 +148,14 @@ void djui_panel_host_create(struct DjuiBase* caller) {
                 djui_base_set_size_type(&sInputboxPort->base, DJUI_SVT_RELATIVE, DJUI_SVT_ABSOLUTE);
                 djui_base_set_size(&sInputboxPort->base, 0.45f, 32);
                 djui_base_set_alignment(&sInputboxPort->base, DJUI_HALIGN_RIGHT, DJUI_VALIGN_TOP);
+#ifdef TARGET_WEB
+                webnet_ensure_room_name();
+                djui_inputbox_set_text(sInputboxPort, gWebRoomName);
+#else
                 char portString[32] = { 0 };
                 snprintf(portString, 32, "%d", configHostPort);
                 djui_inputbox_set_text(sInputboxPort, portString);
+#endif
                 djui_interactable_hook_value_change(&sInputboxPort->base, djui_panel_host_port_text_change);
                 if (gNetworkType == NT_SERVER) {
                     djui_base_set_enabled(&sInputboxPort->base, false);

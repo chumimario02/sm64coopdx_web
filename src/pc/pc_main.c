@@ -28,6 +28,14 @@
 #include "controller/controller_mouse.h"
 #include "fs/fs.h"
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+// Marca de arranque visible en el titulo de la pestana (depuracion del port a web)
+#define WEBBOOT(n) EM_ASM({ document.title = "boot:" + $0; }, (int)(n))
+#else
+#define WEBBOOT(n) do { } while (0)
+#endif
+
 #include "game/display.h" // for gGlobalTimer
 #include "game/game_init.h"
 #include "game/main.h"
@@ -500,9 +508,66 @@ void* main_game_init(UNUSED void* dummy) {
     return NULL;
 }
 
+#ifdef __EMSCRIPTEN__
+// El motor avanza su reloj 1/30 s por iteracion, y en el navegador no se puede
+// bloquear el hilo para esperar. Aqui contamos cuantas iteraciones pide el reloj
+// real: da igual si el navegador nos llama a 60, 120 o 144 Hz (o por temporizador),
+// el juego avanza siempre a FRAMERATE pasos por segundo.
+static void web_main_loop_iteration(void) {
+    static f64 sNextTick = -1.0;
+    static u32 sTicksLogged = 0;
+    static f64 sLoggedAt = 0.0;
+
+    const f64 now = emscripten_get_now() / 1000.0;
+    if (sNextTick < 0.0) { sNextTick = now; sLoggedAt = now; }
+
+    // Si nos hemos quedado muy atras (pestana en segundo plano, carga...), saltamos
+    // al presente: asi no intentamos "recuperar" el tiempo perdido acelerando.
+    if (now - sNextTick > 0.5) { sNextTick = now; }
+
+    const f64 loopStart = now;
+    int iterations = 0;
+    while (iterations < 4 && now >= sNextTick) {
+        sNextTick += sFrameTime;
+        iterations++;
+        sTicksLogged++;
+
+        debug_context_reset();
+        CTX_BEGIN(CTX_TOTAL);
+        gWindowApi->main_loop(produce_one_frame);
+#ifdef DISCORD_SDK
+        discord_update();
+#endif
+        mumble_update();
+        CTX_END(CTX_TOTAL);
+    }
+
+    if (iterations > 0) {
+#ifdef DEVELOPMENT
+        djui_ctx_display_update();
+#endif
+        djui_lua_profiler_update();
+    }
+
+    // Si el fotograma se ha pasado de largo, tampoco acumulamos deuda.
+    const f64 after = emscripten_get_now() / 1000.0;
+    if (after - loopStart > 0.05) { sNextTick = after; }
+
+    // [temporal] comprobacion del ritmo real del juego en el navegador
+    if (after >= sLoggedAt + 5.0) {
+        printf("[web-ritmo] %.1f iteraciones/s (objetivo %d)\n", (double)sTicksLogged / (after - sLoggedAt), FRAMERATE);
+        fflush(stdout);
+        sTicksLogged = 0;
+        sLoggedAt = after;
+    }
+}
+#endif
+
 int main(int argc, char *argv[]) {
     // handle terminal arguments
+    WEBBOOT(0);
     if (!parse_cli_opts(argc, argv)) { return 0; }
+    WEBBOOT(1); printf("[web-boot] 1 cli opts ok\n"); fflush(stdout);
 
 #ifdef _WIN32
     // handle Windows console
@@ -525,23 +590,31 @@ int main(int argc, char *argv[]) {
 #else
     fs_init(gCLIOpts.savePath[0] ? gCLIOpts.savePath : sys_user_path());
 #endif
+    WEBBOOT(2); printf("[web-boot] 2 fs_init ok (writepath='%s' exedir='%s')\n", fs_get_write_path(""), sys_exe_path_dir()); fflush(stdout);
 
     configfile_load();
+    WEBBOOT(3); printf("[web-boot] 3 configfile_load ok\n"); fflush(stdout);
 
     legacy_folder_handler();
+    WEBBOOT(4); printf("[web-boot] 4 legacy_folder_handler ok\n"); fflush(stdout);
 
     select_graphics_backend();
+    WEBBOOT(5); printf("[web-boot] 5 graphics backend selected\n"); fflush(stdout);
 
     // create the window almost straight away
     if (!gGfxInited) {
+        WEBBOOT(6); printf("[web-boot] 6 calling gfx_init\n"); fflush(stdout);
         gfx_init(gWindowApi, gRenderApi, TITLE);
+        WEBBOOT(7); printf("[web-boot] 7 gfx_init returned\n"); fflush(stdout);
         gWindowApi->set_keyboard_callbacks(keyboard_on_key_down, keyboard_on_key_up, keyboard_on_all_keys_up,
             keyboard_on_text_input, keyboard_on_text_editing);
         gWindowApi->set_scroll_callback(mouse_on_scroll);
     }
 
     // render the rom setup screen
+    WEBBOOT(8); printf("[web-boot] 8 calling main_rom_handler\n"); fflush(stdout);
     if (!main_rom_handler()) {
+        WEBBOOT(9); printf("[web-boot] 9 no valid rom found\n"); fflush(stdout);
         if (!gCLIOpts.hideLoadingScreen) {
             render_rom_setup_screen(); // holds the game load until a valid rom is provided
         } else {
@@ -549,19 +622,24 @@ int main(int argc, char *argv[]) {
             return 0;
         }
     }
+    WEBBOOT(10); printf("[web-boot] 10 rom handler done\n"); fflush(stdout);
 
     // start the thread for setting up the game
     bool threadSuccess = false;
+    WEBBOOT(11); printf("[web-boot] 11 creating loading thread\n"); fflush(stdout);
     if (!gCLIOpts.hideLoadingScreen && !gCLIOpts.headless) {
         if (init_thread_handle(&gLoadingThread, main_game_init, NULL, NULL, 0) == 0) {
+            WEBBOOT(1102); printf("[web-boot] 11b thread created, rendering loading screen\n"); fflush(stdout);
             render_loading_screen(); // render the loading screen while the game is setup
             threadSuccess = true;
             destroy_mutex(&gLoadingThread);
         }
     }
     if (!threadSuccess) {
+        WEBBOOT(1103); printf("[web-boot] 11c no thread, running main_game_init inline\n"); fflush(stdout);
         main_game_init(NULL); // failsafe incase threading doesn't work
     }
+    WEBBOOT(12); printf("[web-boot] 12 game init done\n"); fflush(stdout);
 
     // initialize sm64 data and controllers
     thread5_game_loop(NULL);
@@ -611,6 +689,14 @@ int main(int argc, char *argv[]) {
     }
 
     // main loop
+    WEBBOOT(13); printf("[web-boot] 13 entering main loop\n"); fflush(stdout);
+#ifdef __EMSCRIPTEN__
+    // El ritmo (30 pasos/s) lo lleva web_main_loop_iteration contando el tiempo
+    // real, asi que aqui pedimos el modo normal del navegador (requestAnimationFrame):
+    // nos llamara a la frecuencia del monitor y nosotros decidimos cuando avanzar
+    // el juego. De paso, si la pestana se oculta el juego se pausa solo.
+    emscripten_set_main_loop(web_main_loop_iteration, 0, 1);
+#else
     while (true) {
         debug_context_reset();
         CTX_BEGIN(CTX_TOTAL);
@@ -630,6 +716,7 @@ int main(int argc, char *argv[]) {
 #endif
         djui_lua_profiler_update();
     }
+#endif
 
     return 0;
 }

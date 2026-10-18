@@ -1155,7 +1155,7 @@ void bhv_point_light_loop(void);
 Gfx *geo_move_mario_part_from_parent(s32 run, UNUSED struct GraphNode *node, Mat4 mtx);
 
 // Bowser
-Gfx *geo_bits_bowser_coloring(s32 run, struct GraphNode *node, UNUSED s32 a2);
+Gfx *geo_bits_bowser_coloring(s32 run, struct GraphNode *node, UNUSED void *a2);
 Gfx *geo_update_body_rot_from_parent(s32 run, UNUSED struct GraphNode *node, Mat4 mtx);
 Gfx *geo_switch_bowser_eyes(s32 run, struct GraphNode *node, UNUSED Mat4 *mtx);
 

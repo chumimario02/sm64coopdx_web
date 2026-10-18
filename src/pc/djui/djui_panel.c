@@ -137,6 +137,15 @@ void djui_panel_back(void) {
 }
 
 void djui_panel_update(void) {
+#ifdef TARGET_WEB
+    // refresco asincrono de la lista de salas del panel de "unirse". Se hace
+    // aqui (y no al dibujar) para no tocar el arbol de elementos en mitad del
+    // renderizado, lo que bloquea el juego.
+    {
+        extern void djui_panel_join_direct_poll(void);
+        djui_panel_join_direct_poll();
+    }
+#endif
     if (sPanelList == NULL) { return; }
     if (sPanelList->base == NULL) { return; }
     if (sPanelList->base->elem.height == 0) { return; }

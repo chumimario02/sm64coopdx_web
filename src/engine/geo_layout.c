@@ -1,4 +1,5 @@
 #include <ultra64.h>
+#include <stdio.h>
 #include "sm64.h"
 
 #include "geo_layout.h"

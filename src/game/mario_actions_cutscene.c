@@ -217,7 +217,10 @@ void bhv_end_toad_loop(void) {
 }
 
 // Geo switch case function for controlling Peach's eye state.
-s32 geo_switch_peach_eyes(s32 run, struct GraphNode *node, UNUSED s32 a2) {
+// IMPORTANTE (wasm): la firma debe coincidir EXACTAMENTE con GraphNodeFunc
+// (Gfx *(s32, struct GraphNode *, void *)): si el 3er parametro o el retorno
+// cambian de tamano, la llamada indirecta da "function signature mismatch".
+Gfx *geo_switch_peach_eyes(s32 run, struct GraphNode *node, UNUSED void *a2) {
     struct GraphNodeSwitchCase *switchCase = (struct GraphNodeSwitchCase *) node;
 
     if (run == TRUE) {
@@ -233,7 +236,7 @@ s32 geo_switch_peach_eyes(s32 run, struct GraphNode *node, UNUSED s32 a2) {
         }
     }
 
-    return 0;
+    return NULL;
 }
 
 /**

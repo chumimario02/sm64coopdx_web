@@ -209,7 +209,7 @@ static const char *shader_item_to_str(uint32_t item, bool with_alpha, bool only_
             case SHADER_COMBINEDA:
                 return "texel.a";
             case SHADER_NOISE:
-                return "noise.a";
+                return "noise";
         }
     }
     return "unknown";
@@ -506,7 +506,8 @@ static struct ShaderProgram *gfx_opengl_create_and_load_new_shader(struct ColorC
 
         // exposure
         append_line(fs_buf, &fs_len, "if (uShaderFlags[4] == 1) {");
-        append_line(fs_buf, &fs_len, "texel.rgb = texel.rgb + (uShaderFlagValues[4] - 2) * texel.rgb + texel.rgb;");
+        // GLSL ES 1.00 (WebGL) no permite mezclar int con float: el literal debe ser 2.0
+        append_line(fs_buf, &fs_len, "texel.rgb = texel.rgb + (uShaderFlagValues[4] - 2.0) * texel.rgb + texel.rgb;");
         append_line(fs_buf, &fs_len, "}");
 
         // dithering
@@ -517,7 +518,8 @@ static struct ShaderProgram *gfx_opengl_create_and_load_new_shader(struct ColorC
         // posterization
         append_line(fs_buf, &fs_len, "if (uShaderFlags[6] == 1) {");
         append_line(fs_buf, &fs_len, "int levels = int(max(1.0, uShaderFlagValues[6]));");
-        append_line(fs_buf, &fs_len, "texel.rgb = floor(texel.rgb * levels) / levels;");
+        // GLSL ES 1.00 no convierte int->float implicitamente: hay que convertir a float a mano
+        append_line(fs_buf, &fs_len, "texel.rgb = floor(texel.rgb * float(levels)) / float(levels);");
         append_line(fs_buf, &fs_len, "}");
 
         // scan lines
@@ -835,10 +837,14 @@ static void gfx_opengl_init(void) {
 
     glBindBuffer(GL_ARRAY_BUFFER, opengl_vbo);
 
+    // Los VAO solo existen en OpenGL 3+/GLES3; en GLES2 (RPi) y en WebGL1 no se usan.
+    // (En la RPi esto compilaba como simple warning; Clang 20 de Emscripten lo trata como error.)
+#ifndef USE_GLES
     if (vmajor >= 3 && !is_es) {
         glGenVertexArrays(1, &opengl_vao);
         glBindVertexArray(opengl_vao);
     }
+#endif
 
     glDepthFunc(GL_LEQUAL);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);

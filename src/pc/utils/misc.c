@@ -108,6 +108,12 @@ bool clock_is_date(u8 month, u8 day) {
 // delay functions lack accuracy sometimes due to os scheduling
 // busy-waiting is bad practice but it's very accurate so we use a hybrid
 void precise_delay_f64(f64 delaySec) {
+#ifdef __EMSCRIPTEN__
+    // En el navegador no podemos dormir el hilo: el ritmo lo lleva el bucle
+    // principal (web_main_loop_iteration en pc_main.c). Esperar aqui solo
+    // quemaria CPU y congelaria la pestana.
+    (void)delaySec;
+#else
     const f64 sleepMargin = 0.002; // 2 ms margin before we switch to busy-waiting
 
     f64 start = clock_elapsed_f64();
@@ -122,6 +128,7 @@ void precise_delay_f64(f64 delaySec) {
 
     // busy-wait until the target time is hit
     while (clock_elapsed_f64() < end);
+#endif
 }
 
 void file_get_line(char* buffer, size_t maxLength, FILE* fp) {
