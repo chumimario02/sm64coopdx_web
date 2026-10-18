@@ -81,6 +81,13 @@ const rooms = new Map();
 // a valid source id, so the game can tell it apart from a real datagram.
 const TAKEN_FRAME = Buffer.concat([Buffer.from([0xff]), Buffer.from('TAKEN', 'utf8')]);
 
+// Heartbeat: a peer that died without a clean close (browser tab killed, broken
+// proxy, suspended phone) has to be noticed, or its room stays in the /rooms list
+// as a ghost. Every HEARTBEAT_MS we ping every peer and drop the ones that have
+// not answered for HEARTBEAT_TIMEOUT_MS.
+const HEARTBEAT_MS = 15000;
+const HEARTBEAT_TIMEOUT_MS = 45000;
+
 function log(...args) {
     console.log(new Date().toISOString().slice(11, 19), ...args);
 }
@@ -113,6 +120,7 @@ function writeFrame(peer, opcode, payload) {
 }
 
 function onData(peer, chunk) {
+    peer.lastSeen = Date.now();
     peer.buf = peer.buf && peer.buf.length ? Buffer.concat([peer.buf, chunk]) : chunk;
     for (;;) {
         const b = peer.buf;
@@ -191,6 +199,23 @@ function sendToPeer(peer, src, payload) {
     writeFrame(peer, 0x2, out);
 }
 
+// ------------------------------ heartbeat --------------------------------
+
+setInterval(() => {
+    const now = Date.now();
+    for (const r of [...rooms.values()]) {
+        const peers = (r.host ? [r.host] : []).concat([...r.clients.values()]);
+        for (const peer of peers) {
+            if (now - (peer.lastSeen || 0) > HEARTBEAT_TIMEOUT_MS) {
+                log(`[${r.room}] ${peer.isHost ? 'HOST' : 'client ' + peer.id} has not answered for too long: dropping it`);
+                try { peer.socket.destroy(); } catch (e) {}
+                continue;
+            }
+            try { writeFrame(peer, 0x9, Buffer.alloc(0)); } catch (e) {} // ping
+        }
+    }
+}, HEARTBEAT_MS);
+
 // ------------------------------ HTTP + upgrade ----------------------------
 
 const server = http.createServer((req, res) => {
@@ -242,7 +267,7 @@ server.on('upgrade', (req, socket) => {
     let r = rooms.get(roomName);
     if (!r) { r = { room: roomName, host: null, clients: new Map(), nextId: 2 }; rooms.set(roomName, r); }
 
-    const peer = { socket, buf: null, room: r, isHost: wantsHost, id: 0 };
+    const peer = { socket, buf: null, room: r, isHost: wantsHost, id: 0, lastSeen: Date.now() };
 
     if (wantsHost) {
         const old = r.host;
