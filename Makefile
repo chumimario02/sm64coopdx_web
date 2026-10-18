@@ -1050,20 +1050,31 @@ ifeq ($(TARGET_WEB),1)
              -sUSE_ZLIB=1 \
              -sALLOW_MEMORY_GROWTH=1 \
              -sSTACK_SIZE=5242880 \
-             -sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAP32 \
+             -sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAP32,FS,callMain \
+             -sFORCE_FILESYSTEM=1 \
+             -sINVOKE_RUN=0 \
+             --shell-file web/shell.html \
+             --pre-js web/pre.js \
+             -lidbfs.js \
              lib/lua/web64/liblua53.a
   # ^ EXPORTED_RUNTIME_METHODS: Emscripten 4 ya no publica Module.HEAPxx por
   #   defecto. Nuestro codigo de red web (EM_JS) necesita escribir en el heap
   #   (socket_web.c); exportarlas aqui garantiza que existan y evita que una
-  #   excepcion JS deje el juego congelado.
+  #   excepcion JS deje el juego congelado. FS y callMain los necesita la
+  #   pantalla de carga (web/shell.html + web/pre.js).
+  # ^ INVOKE_RUN=0 + --shell-file + --pre-js + -lidbfs.js: el juego ya no
+  #   arranca solo. Se espera a que IndexedDB (guardado persistente del
+  #   navegador) este montado y leido, y el jugador pulsa JUGAR: asi el navegador
+  #   permite entrar en pantalla completa y activar el sonido (exigen un clic).
 
   # Opcional (solo para pruebas locales): incrustar un ROM en el propio build con
   #   make ... WEB_ROM="/ruta/baserom.us.z64"
-  # Se coloca donde el juego lo busca (su carpeta de usuario en el sistema de
-  # ficheros virtual: SDL_GetPrefPath -> /libsdl/<app>/).
+  # Se coloca en /rom (fuera de la carpeta de escritura, que va montada como
+  # IndexedDB y por tanto empieza vacia); al arrancar, pc_main.c copia el .z64 a
+  # la carpeta de escritura la primera vez (es donde el juego lo busca).
   # OJO: ese build CONTIENE el ROM y NO debe compartirse nunca.
   ifneq ($(WEB_ROM),)
-    LDFLAGS += --preload-file $(WEB_ROM)@/libsdl/sm64coopdx/baserom.us.z64
+    LDFLAGS += --preload-file $(WEB_ROM)@/rom/baserom.us.z64
   endif
 
   # ---------------------------------------------------------------------------

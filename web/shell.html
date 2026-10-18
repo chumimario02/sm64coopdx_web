@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>SM64 Coop DX — Web</title>
+<style>
+  :root { --amarillo:#ffd23f; --rojo:#e23a2e; --azul:#2b6cff; --verde:#3ddc84; }
+  html, body { margin:0; padding:0; height:100%; background:#0a0a12; overflow:hidden; }
+  body { font-family: system-ui, "Segoe UI", Roboto, Arial, sans-serif; color:#fff; }
+  #canvas { position:fixed; inset:0; width:100%; height:100%; display:block; background:#000; outline:none; }
+  body.cargando #canvas { visibility:hidden; }
+
+  #carga { position:fixed; inset:0; z-index:10; overflow-y:auto; display:flex; flex-direction:column;
+           align-items:center; justify-content:center; gap:16px; padding:22px 18px 70px; text-align:center;
+           background: radial-gradient(circle at 50% 18%, #1b2a6b 0%, #0a0a12 62%); }
+  #carga.oculto { display:none; }
+  .titulo { font-size: clamp(30px, 8vw, 68px); font-weight:900; letter-spacing:2px; line-height:1;
+            text-shadow: 0 6px 0 #000a, 0 0 34px #2b6cff88; }
+  .titulo .s1 { color:#e23a2e } .titulo .s2 { color:#ffd23f }
+  .titulo .s3 { color:#3ddc84 } .titulo .s4 { color:#2b6cff }
+  .sub { font-size: clamp(10px, 2.4vw, 15px); color:#b7c6ee; letter-spacing:4px; text-transform:uppercase; }
+  #barra { width: min(560px, 86vw); height:14px; border-radius:10px; background:#ffffff18;
+           box-shadow: inset 0 2px 6px #0008; overflow:hidden; }
+  #barra > i { display:block; height:100%; width:0%; border-radius:10px;
+               background: linear-gradient(90deg, #2b6cff, #3ddc84); transition: width .2s linear; }
+  #estado { min-height:20px; font-size: clamp(11px, 2.6vw, 15px); color:#cfd8ff; }
+  #aviso { max-width:640px; font-size:12px; color:#ffb4b4; white-space:pre-wrap; }
+
+  #jugar { display:none; margin-top:4px; padding:16px 52px; font-size: clamp(18px, 4vw, 30px); font-weight:900;
+           letter-spacing:2px; color:#10131a; background: linear-gradient(180deg, #ffe680, #ffc400);
+           border:0; border-radius:14px; cursor:pointer; box-shadow: 0 8px 0 #a97b00, 0 10px 30px #0008; }
+  #jugar.visible { display:inline-block; animation: latido 1.6s ease-in-out infinite; }
+  #jugar:active { transform: translateY(3px); box-shadow: 0 5px 0 #a97b00; }
+  @keyframes latido { 0%,100% { transform:scale(1) } 50% { transform:scale(1.04) } }
+
+  /* --- panel para colocar el ROM --- */
+  #rom { width:min(620px, 92vw); border:2px dashed #ffffff33; border-radius:14px; padding:14px 16px;
+         background:#ffffff0d; transition: border-color .15s, background .15s; }
+  #rom.pide { border-color:#ffd23f88; background:#ffd23f14; }
+  #rom.bien { border-color:#3ddc8488; background:#3ddc8414; }
+  #rom.sobre { border-color:#3ddc84; background:#3ddc8422; }
+  #romTitulo { font-size: clamp(14px, 3vw, 19px); font-weight:800; margin-bottom:4px; }
+  #romTitulo .pide { color:#ffd23f } #romTitulo .bien { color:#3ddc84 }
+  #romTexto { font-size: clamp(11px, 2.5vw, 13.5px); color:#c9d3f2; line-height:1.45; }
+  #romBoton { display:inline-block; margin-top:10px; padding:11px 22px; border-radius:10px; cursor:pointer;
+              font-size: clamp(12px, 2.8vw, 15px); font-weight:800; color:#0b1020;
+              background: linear-gradient(180deg, #dbe6ff, #9fb8ee); box-shadow: 0 4px 0 #5f74a8; }
+  #romBoton:active { transform: translateY(2px); box-shadow: 0 2px 0 #5f74a8; }
+  #romInput { display:none; }
+  #romEstado { margin-top:8px; font-size:12px; color:#9fb0d8; }
+  #romEstado.error { color:#ff9c9c; } #romEstado.ok { color:#7ff0b0; }
+  .pie { position:fixed; bottom:10px; left:0; right:0; padding:0 16px; font-size:11.5px; color:#8fa0c8; text-align:center; }
+  .pie b { color:#ffd23f; }
+  #pantalla { position:fixed; right:12px; bottom:12px; z-index:20; display:none; width:44px; height:44px;
+              border:0; border-radius:10px; background:#ffffff1a; color:#fff; font-size:20px; cursor:pointer; }
+  #pantalla.visible { display:block; }
+</style>
+</head>
+<body class="cargando">
+<canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+
+<div id="carga">
+  <div class="titulo"><span class="s1">SM</span><span class="s2">64</span> <span class="s3">COOP</span> <span class="s4">DX</span></div>
+  <div class="sub">Web · multijugador</div>
+  <div id="barra"><i></i></div>
+  <div id="estado">Cargando el juego…</div>
+  <div id="aviso"></div>
+  <button id="jugar">▶ JUGAR</button>
+
+  <div id="rom">
+    <div id="romTitulo">Coloca tu ROM</div>
+    <div id="romTexto">Necesitas tu copia de <b>Super Mario 64 (USA)</b> en formato <code>.z64</code> (también valen <code>.n64</code>/<code>.v64</code>: los convertimos solos).</div>
+    <label id="romBoton" for="romInput">📁 Elegir mi ROM…</label>
+    <input id="romInput" type="file" accept=".z64,.n64,.v64,.Z64,.N64,.V64">
+    <div id="romEstado">También puedes arrastrar el archivo aquí.</div>
+  </div>
+
+  <div class="pie">El ROM y tus partidas se quedan <b>solo en este navegador</b> (nunca se sube a ningún sitio).<br>
+    Multijugador: pulsa <b>Crear</b> y comparte el nombre de la sala (p. ej. <b>sala123</b>) con quien quieras jugar.</div>
+</div>
+
+<button id="pantalla" title="Pantalla completa">⛶</button>
+
+<script>
+// ---------------------------------------------------------------------------
+// Pantalla de carga propia (sustituye a la pagina por defecto de Emscripten).
+// - El juego NO arranca solo: esperamos a que este listo el guardado persistente
+//   (IndexedDB) y a que el jugador pulse JUGAR, porque los navegadores solo
+//   permiten entrar en pantalla completa y activar el sonido con un clic.
+// - Si el build no trae ROM (lo normal al compartirlo), aqui se pide el ROM del
+//   jugador: se guarda en su navegador y no sale de su PC.
+// ---------------------------------------------------------------------------
+window.__sm64boot = -1;   // marcador de arranque; lo escribe pc_main.c (WEBBOOT)
+
+var elCarga    = document.getElementById('carga');
+var elBarra    = document.querySelector('#barra > i');
+var elEstado   = document.getElementById('estado');
+var elJugar    = document.getElementById('jugar');
+var elAviso    = document.getElementById('aviso');
+var elPantalla = document.getElementById('pantalla');
+var elRom      = document.getElementById('rom');
+var elRomTit   = document.getElementById('romTitulo');
+var elRomTexto = document.getElementById('romTexto');
+var elRomInput = document.getElementById('romInput');
+var elRomEstado = document.getElementById('romEstado');
+
+var MD5_USA = '20b854b239203baf6c961b850a4a51a2';   // Super Mario 64 (USA) .z64
+var TAMANO_ROM = 8388608;                            // 8 MB
+
+var hayRom = false;
+var runtimeListo = false;
+
+function texto(t) { elEstado.textContent = t; }
+function progreso(f) { elBarra.style.width = Math.round(100 * Math.max(0, Math.min(1, f))) + '%'; }
+window.sm64Estado = function (t, f) { if (t) { texto(t); } if (typeof f === 'number') { progreso(f); } };
+window.sm64Aviso  = function (t) { elAviso.textContent = t || ''; };
+
+function romEstado(texto2, clase) {
+  elRomEstado.textContent = texto2 || '';
+  elRomEstado.className = clase || '';
+}
+
+// El modulo avisa de si ya hay ROM disponible (incluido en el build o guardado).
+window.sm64Rom = function (info) {
+  hayRom = !!(info && info.hay);
+  if (hayRom) {
+    elRom.className = 'bien';
+    elRomTit.innerHTML = '<span class="bien">ROM listo ✓</span>';
+    elRomTexto.innerHTML = 'Ya tienes tu ROM preparado' + (info.fuente ? ' (' + info.fuente + ')' : '') +
+      ' y se queda guardado en este navegador. Si quieres usar otro, colócalo aquí.';
+    if (!elRomEstado.textContent) { romEstado('', ''); }
+  } else {
+    elRom.className = 'pide';
+    elRomTit.innerHTML = '<span class="pide">1) Coloca tu ROM</span>';
+    elRomTexto.innerHTML = 'Necesitas tu copia de <b>Super Mario 64 (USA)</b> en formato <code>.z64</code>' +
+      ' (también valen <code>.n64</code>/<code>.v64</code>: los convertimos solos).';
+    if (!elRomEstado.textContent) { romEstado('También puedes arrastrar el archivo aquí.'); }
+  }
+  revisarJugar();
+};
+
+// Todo cargado (wasm + datos + guardado leido): solo falta pulsar JUGAR.
+window.sm64Listo = function () {
+  runtimeListo = true;
+  if (!hayRom) { texto('Falta tu ROM: colócala abajo para poder jugar.'); return; }
+  progreso(1);
+  texto('Todo listo. Pulsa JUGAR.');
+  revisarJugar();
+};
+
+function revisarJugar() {
+  if (runtimeListo && hayRom) {
+    progreso(1);
+    texto('Todo listo. Pulsa JUGAR.');
+    elJugar.classList.add('visible');
+  } else {
+    elJugar.classList.remove('visible');
+  }
+}
+
+function traducir(t) {
+  return t
+    .replace(/Downloading data/gi, 'Descargando datos')
+    .replace(/Downloading/gi, 'Descargando')
+    .replace(/Preparing/gi, 'Preparando')
+    .replace(/All downloads complete/gi, 'Descarga completa')
+    .replace(/Running\.\.\./gi, 'Arrancando');
+}
+
+// El navegador exige un gesto del usuario para el sonido: aprovechamos el clic.
+function reanudarAudio() {
+  var ctxs = [];
+  try { if (Module['SDL2'] && Module['SDL2'].audioContext) { ctxs.push(Module['SDL2'].audioContext); } } catch (e) {}
+  try { if (Module['AL'] && Module['AL'].currentCtx) { ctxs.push(Module['AL'].currentCtx); } } catch (e) {}
+  for (var i = 0; i < ctxs.length; i++) { try { ctxs[i].resume(); } catch (e) {} }
+}
+
+function irAPantallaCompleta() {
+  var el = document.documentElement;
+  var fn = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+  try { if (fn && !document.fullscreenElement) { fn.call(el); } } catch (e) {}
+}
+
+var arrancado = false;
+function arrancar() {
+  if (arrancado) { return; }
+  if (!hayRom) { romEstado('Antes de jugar necesitas colocar tu ROM.', 'error'); return; }
+  arrancado = true;
+  elJugar.classList.remove('visible');
+  document.body.classList.remove('cargando');
+  elCarga.classList.add('oculto');
+  elPantalla.classList.add('visible');
+  irAPantallaCompleta();
+  reanudarAudio();
+  // Primera llamada al bucle principal del juego (main): el build usa
+  // -sINVOKE_RUN=0 justo para poder arrancarlo desde aqui.
+  try {
+    if (Module['callMain']) { Module.callMain([]); }
+    else if (Module['_main']) { Module._main(0, 0); }
+  } catch (e) { window.sm64Aviso('No se pudo arrancar el juego: ' + e); }
+}
+elJugar.addEventListener('click', arrancar);
+elPantalla.addEventListener('click', function () {
+  if (document.fullscreenElement) {
+    (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+  } else {
+    irAPantallaCompleta();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// MD5 (RFC 1321) sobre bytes: para comprobar que el ROM es el de USA antes de
+// guardarlo, y no llevarnos una pantalla en negro del juego.
+// ---------------------------------------------------------------------------
+function md5Bytes(bytes) {
+  var s = [7,12,17,22,7,12,17,22,7,12,17,22,7,12,17,22,
+           5,9,14,20,5,9,14,20,5,9,14,20,5,9,14,20,
+           4,11,16,23,4,11,16,23,4,11,16,23,4,11,16,23,
+           6,10,15,21,6,10,15,21,6,10,15,21,6,10,15,21];
+  var K = [];
+  for (var i = 0; i < 64; i++) { K[i] = (Math.floor(Math.abs(Math.sin(i + 1)) * 4294967296)) | 0; }
+  function rl(x, c) { return (x << c) | (x >>> (32 - c)); }
+  function ad(a, b) { return (a + b) | 0; }
+  var len = bytes.length;
+  var total = (((len + 8) >> 6) + 1) * 64;
+  var buf = new Uint8Array(total);
+  buf.set(bytes);
+  buf[len] = 0x80;
+  var bits = len * 8;
+  buf[total-8] = bits & 255; buf[total-7] = (bits >>> 8) & 255;
+  buf[total-6] = (bits >>> 16) & 255; buf[total-5] = (bits >>> 24) & 255;
+  var a0 = 0x67452301, b0 = 0xefcdab89, c0 = 0x98badcfe, d0 = 0x10325476;
+  for (var off = 0; off < total; off += 64) {
+    var M = new Int32Array(16);
+    for (var j = 0; j < 16; j++) {
+      M[j] = buf[off+4*j] | (buf[off+4*j+1] << 8) | (buf[off+4*j+2] << 16) | (buf[off+4*j+3] << 24);
+    }
+    var A = a0, B = b0, C = c0, D = d0;
+    for (var i2 = 0; i2 < 64; i2++) {
+      var F, g;
+      if (i2 < 16)      { F = (B & C) | (~B & D); g = i2; }
+      else if (i2 < 32) { F = (D & B) | (~D & C); g = (5*i2 + 1) & 15; }
+      else if (i2 < 48) { F = B ^ C ^ D;          g = (3*i2 + 5) & 15; }
+      else              { F = C ^ (B | ~D);       g = (7*i2) & 15; }
+      F = ad(ad(ad(F, A), K[i2]), M[g]);
+      A = D; D = C; C = B;
+      B = ad(B, rl(F, s[i2]));
+    }
+    a0 = ad(a0, A); b0 = ad(b0, B); c0 = ad(c0, C); d0 = ad(d0, D);
+  }
+  function hx(x) { var r = ''; for (var k = 0; k < 4; k++) { r += ('0' + ((x >>> (8*k)) & 255).toString(16)).slice(-2); } return r; }
+  return hx(a0) + hx(b0) + hx(c0) + hx(d0);
+}
+
+// Los ROMs circulan en tres ordenaciones de bytes. Solo el .z64 (big endian) es
+// el bueno para el juego, asi que convertimos los otros dos formatos.
+function ordenDelRom(b) {
+  if (b.length < 4) { return 'desconocido'; }
+  if (b[0] === 0x80 && b[1] === 0x37 && b[2] === 0x12 && b[3] === 0x40) { return 'z64'; }
+  if (b[0] === 0x37 && b[1] === 0x80 && b[2] === 0x40 && b[3] === 0x12) { return 'v64'; }
+  if (b[0] === 0x40 && b[1] === 0x12 && b[2] === 0x37 && b[3] === 0x80) { return 'n64'; }
+  return 'desconocido';
+}
+function aZ64(b, orden) {
+  if (orden === 'z64') { return b; }
+  var r = new Uint8Array(b.length);
+  if (orden === 'v64') {                      // intercambia cada pareja de bytes
+    for (var i = 0; i + 1 < b.length; i += 2) { r[i] = b[i+1]; r[i+1] = b[i]; }
+    return r;
+  }
+  if (orden === 'n64') {                      // invierte cada palabra de 4 bytes
+    for (var j = 0; j + 3 < b.length; j += 4) { r[j] = b[j+3]; r[j+1] = b[j+2]; r[j+2] = b[j+1]; r[j+3] = b[j]; }
+    return r;
+  }
+  return b;
+}
+
+var procesandoRom = false;
+
+function procesarRom(archivo) {
+  if (!archivo || procesandoRom) { return; }
+  procesandoRom = true;
+  romEstado('Leyendo ' + archivo.name + ' (' + (archivo.size / 1048576).toFixed(1) + ' MB)…');
+
+  var lector = new FileReader();
+  lector.onerror = function () { procesandoRom = false; romEstado('No pude leer el archivo.', 'error'); };
+  lector.onload = function () {
+    try {
+      var bytes = new Uint8Array(lector.result);
+      var orden = ordenDelRom(bytes);
+
+      if (bytes.length !== TAMANO_ROM) {
+        procesandoRom = false;
+        romEstado('Ese archivo pesa ' + (bytes.length / 1048576).toFixed(1) + ' MB y un ROM de N64 son 8 MB. ' +
+                  'Si es un .zip o .rar, descomprímelo antes.', 'error');
+        return;
+      }
+      if (orden === 'desconocido') {
+        procesandoRom = false;
+        romEstado('Ese archivo no parece un ROM de Nintendo 64 (no reconozco su cabecera).', 'error');
+        return;
+      }
+
+      romEstado('Comprobando que sea Super Mario 64 (USA)…');
+      var z64 = aZ64(bytes, orden);
+      var md5 = md5Bytes(z64);
+
+      if (md5 !== MD5_USA) {
+        procesandoRom = false;
+        romEstado('Ese ROM no es el de Super Mario 64 (USA). Este port usa la versión USA: ' +
+                  'baserom.us.z64. (md5: ' + md5 + ')', 'error');
+        return;
+      }
+
+      // Guardar en el navegador (carpeta de escritura del juego, o sea IndexedDB).
+      var helper = globalThis.__sm64Rom;
+      if (!helper || !helper.escribir) {
+        procesandoRom = false;
+        romEstado('El guardado del navegador todavía no está listo; espera un momento y reinténtalo.', 'error');
+        return;
+      }
+      helper.escribir(z64, function (err) {
+        procesandoRom = false;
+        if (err) { romEstado('No pude guardar el ROM: ' + err, 'error'); return; }
+        romEstado('ROM guardado ✓ (' + (orden === 'z64' ? 'z64' : orden + ' convertido a z64') + ', md5 ' + md5 + ')', 'ok');
+        hayRom = true;
+        elRom.className = 'bien';
+        elRomTit.innerHTML = '<span class="bien">ROM listo ✓</span>';
+        elRomTexto.innerHTML = 'Tu ROM ya está guardado en este navegador: no hace falta volver a ponerlo.';
+        revisarJugar();
+      });
+    } catch (e) {
+      procesandoRom = false;
+      romEstado('Error al procesar el ROM: ' + e, 'error');
+    }
+  };
+  lector.readAsArrayBuffer(archivo);
+}
+
+elRomInput.addEventListener('change', function (ev) {
+  if (ev.target.files && ev.target.files[0]) { procesarRom(ev.target.files[0]); }
+});
+
+// Arrastrar y soltar el ROM sobre la pantalla.
+['dragenter', 'dragover'].forEach(function (ev) {
+  document.addEventListener(ev, function (e) {
+    if (arrancado) { return; }
+    e.preventDefault();
+    elRom.classList.add('sobre');
+  });
+});
+['dragleave', 'drop'].forEach(function (ev) {
+  document.addEventListener(ev, function (e) {
+    if (arrancado) { return; }
+    e.preventDefault();
+    elRom.classList.remove('sobre');
+  });
+});
+document.addEventListener('drop', function (e) {
+  if (arrancado) { return; }
+  if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) { procesarRom(e.dataTransfer.files[0]); }
+});
+
+// ---------------------------------------------------------------------------
+// Objeto Module que consume el .js generado por Emscripten.
+// ---------------------------------------------------------------------------
+var Module = {
+  canvas: document.getElementById('canvas'),
+  print: function () { console.log.apply(console, arguments); },
+  printErr: function () { console.warn.apply(console, arguments); },
+  setStatus: function (t) {
+    if (!t) { return; }
+    var m = /([^(]+)\((\d+(?:\.\d+)?)\/(\d+)\)/.exec(t);
+    if (m) { progreso(parseInt(m[2], 10) / parseInt(m[3], 10)); texto(traducir(m[1]) + ' ' + m[2] + '/' + m[3]); }
+    else { texto(traducir(t)); }
+  },
+  monitorRunDependencies: function (left) {
+    if (left > 0) { texto('Preparando… (' + left + ')'); }
+  }
+};
+window.Module = Module;
+
+// Que un fallo se vea en la pantalla de carga y no en una pantalla en negro.
+window.addEventListener('error', function (e) {
+  if (!arrancado) { window.sm64Aviso('Error al cargar: ' + (e.message || e.type)); }
+});
+</script>
+{{{ SCRIPT }}}
+</body>
+</html>

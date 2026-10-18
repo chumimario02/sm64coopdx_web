@@ -30,8 +30,11 @@
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
-// Marca de arranque visible en el titulo de la pestana (depuracion del port a web)
-#define WEBBOOT(n) EM_ASM({ document.title = "boot:" + $0; }, (int)(n))
+// Marca de arranque para depurar el port a web. Ya NO toca el titulo de la
+// pestana (la pantalla de carga propia lo usa): solo actualiza un contador que
+// se puede leer desde la consola del navegador con  window.__sm64boot
+// (OJO: el cuerpo de EM_ASM es JavaScript, no C: nada de "(int)")
+#define WEBBOOT(n) EM_ASM({ if (typeof globalThis.__sm64boot !== 'undefined') { globalThis.__sm64boot = $0 | 0; } }, (int)(n))
 #else
 #define WEBBOOT(n) do { } while (0)
 #endif
@@ -517,6 +520,7 @@ static void web_main_loop_iteration(void) {
     static f64 sNextTick = -1.0;
     static u32 sTicksLogged = 0;
     static f64 sLoggedAt = 0.0;
+    static f64 sLastSyncAt = 0.0;
 
     const f64 now = emscripten_get_now() / 1000.0;
     if (sNextTick < 0.0) { sNextTick = now; sLoggedAt = now; }
@@ -560,6 +564,44 @@ static void web_main_loop_iteration(void) {
         sTicksLogged = 0;
         sLoggedAt = after;
     }
+
+    // Volcado del guardado a IndexedDB cada 10 s (partidas, mods y ajustes).
+    // El archivo se marca como "sucio" al escribirlo, asi que syncfs solo sube lo
+    // que ha cambiado.
+    if (after >= sLastSyncAt + 10.0) {
+        sLastSyncAt = after;
+        EM_ASM({ if (typeof FS !== 'undefined' && FS.syncfs) { FS.syncfs(false, function () {}); } });
+    }
+}
+#endif
+
+#ifdef __EMSCRIPTEN__
+// El ROM que trae el build viaja en /rom (paquete de solo lectura). El juego solo
+// busca el .z64 en su carpeta de escritura, que en web esta montada sobre
+// IndexedDB y empieza vacia, asi que lo copiamos ahi la primera vez. A partir de
+// ahi el ROM (y los guardados) ya quedan en el navegador del jugador.
+static void web_copy_bundled_rom(void) {
+    static char destino[SYS_MAX_PATH];
+    snprintf(destino, sizeof(destino), "%s", fs_get_write_path("baserom.us.z64"));
+
+    FILE* yaEsta = fopen(destino, "rb");
+    if (yaEsta != NULL) { fclose(yaEsta); return; }
+
+    FILE* origen = fopen("/rom/baserom.us.z64", "rb");
+    if (origen == NULL) { return; } // build sin ROM incrustado
+
+    FILE* copia = fopen(destino, "wb");
+    if (copia == NULL) { fclose(origen); return; }
+
+    static char bloque[65536];
+    size_t leidos;
+    while ((leidos = fread(bloque, 1, sizeof(bloque), origen)) > 0) {
+        fwrite(bloque, 1, leidos, copia);
+    }
+    fclose(origen);
+    fclose(copia);
+    printf("[web] rom incrustado copiado a %s\n", destino);
+    fflush(stdout);
 }
 #endif
 
@@ -613,6 +655,10 @@ int main(int argc, char *argv[]) {
 
     // render the rom setup screen
     WEBBOOT(8); printf("[web-boot] 8 calling main_rom_handler\n"); fflush(stdout);
+#ifdef __EMSCRIPTEN__
+    // El ROM incrustado hay que dejarlo en la carpeta de escritura (IndexedDB).
+    web_copy_bundled_rom();
+#endif
     if (!main_rom_handler()) {
         WEBBOOT(9); printf("[web-boot] 9 no valid rom found\n"); fflush(stdout);
         if (!gCLIOpts.hideLoadingScreen) {

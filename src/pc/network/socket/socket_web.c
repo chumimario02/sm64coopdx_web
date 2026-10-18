@@ -54,9 +54,11 @@ void webnet_make_host_addr(struct sockaddr_in6* addr) {
 EM_JS(int, webnet_js_begin, (int isHost, const char* roomC, const char* relayC), {
     var P = function (x) { return (typeof x === 'bigint') ? Number(x) : x; };
     var N = globalThis.__webnet;
-    if (!N) { N = globalThis.__webnet = { ws: null, role: 0, inbox: [], status: "idle", url: "", tries: 0 }; }
+    if (!N) { N = globalThis.__webnet = { ws: null, role: 0, inbox: [], outbox: [], status: "idle", url: "", tries: 0 }; }
+    if (!N.outbox) { N.outbox = []; }
     N.role = isHost ? 1 : 2;
     N.inbox.length = 0;
+    N.outbox.length = 0;
     N.tries = 0;
 
     var room = UTF8ToString(P(roomC));
@@ -92,6 +94,19 @@ EM_JS(int, webnet_js_begin, (int isHost, const char* roomC, const char* relayC),
         ws.onopen = function () {
             N.status = 'open';
             console.log('[webnet] relay conectado: ' + N.url);
+            // El juego manda su primer datagrama (la peticion de lista de mods)
+            // en el mismo instante en que conectamos, sin esperar a que el
+            // WebSocket termine de abrir: si lo tiraramos, el host nunca
+            // contestaria y el cliente jamas llegaria a unirse. Asi que lo
+            // guardamos y lo enviamos ahora, en orden.
+            if (N.outbox && N.outbox.length > 0) {
+                var pending = N.outbox.length;
+                for (var i = 0; i < N.outbox.length; i++) {
+                    try { ws.send(N.outbox[i]); } catch (e) { break; }
+                }
+                N.outbox.length = 0;
+                console.log('[webnet] enviados ' + pending + ' datagramas que estaban encolados');
+            }
             // Solo damos por valido el intento si la conexion aguanta un rato.
             // Asi, si el relay la cierra enseguida (p.ej. sala ocupada), el
             // contador de intentos no se reinicia y no intentamos para siempre.
@@ -141,7 +156,7 @@ EM_JS(int, webnet_js_begin, (int isHost, const char* roomC, const char* relayC),
 // Devuelve 0 si se envio, -1 si no hay relay (el juego lo ignora: modo solitario).
 EM_JS(int, webnet_js_send, (int dst, double ptr, int len), {
     var N = globalThis.__webnet;
-    if (!N || !N.ws || N.ws.readyState !== 1) { return -1; }
+    if (!N) { return -1; }
     // OJO: Emscripten 4 ya NO publica Module.HEAPxx. Usamos la vista local y, si
     // no existiera, la del Module (asi vale en cualquier version).
     var H8 = (typeof HEAPU8 !== 'undefined') ? HEAPU8 : Module['HEAPU8'];
@@ -151,6 +166,15 @@ EM_JS(int, webnet_js_send, (int dst, double ptr, int len), {
     frame[0] = dst & 0xff;  // 0 = todos los clientes, 1 = host, N = cliente N
     frame[1] = 0;           // origen: lo pone el relay
     frame.set(H8.subarray(p, p + len), 2);
+    if (!N.ws || N.ws.readyState !== 1) {
+        // El WebSocket aun esta abriendo (o se acaba de caer). Guardamos el
+        // datagrama para enviarlo en cuanto conecte: si lo descartaramos, el
+        // primer paquete del cliente (peticion de lista de mods) se perderia
+        // SIEMPRE y la union a la sala host nunca terminaria.
+        if (!N.outbox) { N.outbox = []; }
+        if (N.role !== 0 && N.outbox.length < 512) { N.outbox.push(frame); }
+        return 0;
+    }
     try { N.ws.send(frame); } catch (e) { return -1; }
     return 0;
 });
