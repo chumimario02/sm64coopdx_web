@@ -449,7 +449,7 @@ var TOUCH_BITS = {
   cup: 0x0008, cdown: 0x0004, cleft: 0x0002, cright: 0x0001,
   l: 0x0020, r: 0x0010
 };
-var touchPad = { buttons: 0, stickX: 0, stickY: 0, actions: [], chatOpen: false };
+var touchPad = { buttons: 0, stickX: 0, stickY: 0, actions: [], text: [], chatOpen: false };
 globalThis.__sm64touch = touchPad;
 
 var elTouchToggle = document.getElementById('touchToggle');
@@ -510,36 +510,47 @@ function kbdShow(show) {
   }
 }
 
-// One character, as if the keyboard had typed it. SDL reads the character from
-// charCode/keyCode, and a synthetic event only exposes those if we define them.
-function kbdEmitChar(ch) {
-  var code = ch.charCodeAt(0);
-  var ev;
-  try {
-    ev = new KeyboardEvent('keypress', { key: ch, bubbles: true, cancelable: true });
-  } catch (e) {
-    ev = document.createEvent('KeyboardEvent');
-    ev.initKeyboardEvent('keypress', true, true, window, ch, 0, '', false, '');
-  }
-  try { Object.defineProperty(ev, 'charCode', { get: function () { return code; } }); } catch (e) {}
-  try { Object.defineProperty(ev, 'keyCode',  { get: function () { return code; } }); } catch (e) {}
-  try { Object.defineProperty(ev, 'which',    { get: function () { return code; } }); } catch (e) {}
-  window.dispatchEvent(ev);
+// The characters typed on the phone. Phone keyboards do not always give us the
+// letters one by one (Android ones work by composition, with autocorrect in the
+// middle), so instead of trusting the events we compare the field's text with
+// what it had a moment ago and queue whatever is new. The game reads that queue
+// (see controller_keyboard.c), so it does not matter which keyboard is used.
+var kbdLast = '';
+
+// The game reads UTF-8 bytes, one character at a time (emoji included).
+function kbdBytes(ch) {
+  var c = ch.codePointAt(0);
+  if (c < 0x80) { return [c]; }
+  if (c < 0x800) { return [0xC0 | (c >> 6), 0x80 | (c & 63)]; }
+  if (c < 0x10000) { return [0xE0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63)]; }
+  return [0xF0 | (c >> 18), 0x80 | ((c >> 12) & 63), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63)];
 }
 
+function kbdCollect(ev) {
+  var value = elKbd.value;
+  var same = 0;
+  while (same < value.length && same < kbdLast.length && value.charAt(same) === kbdLast.charAt(same)) { same++; }
+  var added = value.slice(same);
+  var chars = Array.from(added);          // by characters, so emoji are not split
+  for (var i = 0; i < chars.length; i++) { touchPad.text.push(kbdBytes(chars[i])); }
+  kbdLast = value;
+  // While the keyboard is composing a word we leave the field alone (emptying it
+  // would confuse it); once the word is done we start over so the text does not
+  // pile up. Deleting is left to the keyboard itself (it sends Backspace).
+  if (!(ev && ev.isComposing)) { elKbd.value = ''; kbdLast = ''; }
+}
+
+function kbdReset() { elKbd.value = ''; kbdLast = ''; }
+
 if (elKbd) {
-  // A native keypress would reach SDL as well and every letter would be typed
-  // twice, so we keep that one to ourselves and rebuild the text from "input",
-  // which is the event Android keyboards do send (autocorrect included).
+  // Let SDL keep its own copy of the text out of the way: the game gets it from
+  // the queue above, so nothing is typed twice.
   elKbd.addEventListener('keypress', function (ev) { ev.stopPropagation(); });
-  elKbd.addEventListener('input', function (ev) {
-    if (ev.isComposing) { return; }        // still composing: wait for the final text
-    var text = elKbd.value;
-    elKbd.value = '';
-    for (var i = 0; i < text.length; i++) { kbdEmitChar(text.charAt(i)); }
-  });
+  elKbd.addEventListener('input', function (ev) { kbdCollect(ev); });
+  elKbd.addEventListener('compositionend', function () { kbdReset(); });
   elKbd.addEventListener('blur', function () {
-    elKbd.value = '';
+    kbdReset();
+    touchPad.text.length = 0;
     if (elKbdBtn) { elKbdBtn.className = 'btn pill'; }
   });
 }

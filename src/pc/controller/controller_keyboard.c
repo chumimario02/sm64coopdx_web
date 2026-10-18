@@ -17,6 +17,7 @@
 
 #ifdef TARGET_WEB
 #include <emscripten.h>
+#include <stdint.h>
 #include "pc/djui/djui_chat_box.h"
 
 // ---------------------------------------------------------------------------
@@ -48,8 +49,8 @@ EM_JS(int, web_touch_axis, (int which), {
     return r | 0;
 });
 
-// Acciones de un solo toque (de momento, el chat). La pagina las encola en
-// globalThis.__sm64touch.actions y el juego las consume aqui abajo.
+// One shot actions (the chat button, for now). The page queues them in
+// globalThis.__sm64touch.actions and the game drains them further down.
 #define WEB_TOUCH_ACTION_CHAT 1
 
 EM_JS(int, web_touch_action, (void), {
@@ -58,12 +59,32 @@ EM_JS(int, web_touch_action, (void), {
     return T.actions.shift() | 0;
 });
 
-// La pagina necesita saber si el chat esta abierto para ensenar u ocultar el
-// teclado del movil a la vez (Android lo mantiene mientras un input tenga el
-// foco). El juego es el unico que lo sabe: el chat se cierra solo al enviar.
+// The page needs to know whether the chat is open so it can show and hide the
+// phone keyboard together with it (Android keeps it while an input has focus).
+// Only the game knows: the chat also closes on its own when a message is sent.
 EM_JS(void, web_touch_report_chat, (int open), {
     var T = globalThis.__sm64touch;
     if (T) { T.chatOpen = !!open; }
+});
+
+// Text typed on the phone. It is handed over here instead of letting SDL deal
+// with it, for two reasons: SDL only accepts text while the game has text input
+// started, and phone keyboards often run on composition (IME), where the
+// characters never reach SDL at all. Going straight to the game's text boxes
+// works on every keyboard. The page hands over UTF-8 bytes, copied by hand
+// (stringToUTF8 is not always exported, as socket_web.c notes).
+EM_JS(int, web_touch_text, (double ptr, int maxLen), {
+    var T = globalThis.__sm64touch;
+    if (!T || !T.text || T.text.length === 0) { return 0; }
+    var H8 = (typeof HEAPU8 !== 'undefined') ? HEAPU8 : Module['HEAPU8'];
+    var P = function (x) { return (typeof x === 'bigint') ? Number(x) : x; };
+    var bytes = T.text.shift();
+    if (!H8 || maxLen <= 0 || !bytes || bytes.length === 0) { return 0; }
+    var q = P(ptr);
+    var lim = Math.min(bytes.length, maxLen - 1);
+    for (var k = 0; k < lim; k++) { H8[q + k] = bytes[k] & 0xff; }
+    H8[q + lim] = 0;
+    return 1;
 });
 #endif
 
@@ -198,6 +219,13 @@ static void keyboard_read(OSContPad *pad) {
             djui_chat_box_toggle();
         }
         touchAction = web_touch_action();
+    }
+
+    // Whatever the player typed on the phone's keyboard, straight into the text
+    // boxes (the chat, the player name...).
+    char touchText[64];
+    while (web_touch_text((double)(uintptr_t) touchText, sizeof(touchText)) != 0) {
+        keyboard_on_text_input(touchText);
     }
 #endif
 }

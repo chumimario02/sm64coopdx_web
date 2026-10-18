@@ -36,13 +36,16 @@ details of the build.
   not break it, and the stick stays analog. It is merged with the keyboard, so
   both can be used at the same time.
 * **Chat and the phone keyboard**: the pad has a **CHAT** button (it opens and
-  closes the chat like the chat key does) and a **⌨** button that shows the
-  phone's on-screen keyboard. SDL/Emscripten never creates the editable element
-  Android needs for that, so the page keeps a hidden `<input>` of its own,
-  focuses it on demand and sends what is typed to the game as text events
-  (`SDL_TEXTINPUT`), which is the same path a physical keyboard uses. The game
-  reports whether the chat is open (`__sm64touch.chatOpen`) so the keyboard
-  appears and disappears with it.
+  closes the chat the same way the chat key does) and a **⌨** button that shows
+  the phone's on-screen keyboard. SDL/Emscripten never creates the editable
+  element Android needs for that, so the page keeps a hidden `<input>` of its
+  own and focuses it on demand (inside the touch gesture, as Android demands).
+  The game reports whether the chat is open (`__sm64touch.chatOpen`) so the
+  keyboard appears and disappears with it. What is typed goes through
+  `__sm64touch.text` (UTF-8 bytes, read in `controller_keyboard.c`) straight
+  into the game's text boxes, instead of through SDL: SDL only accepts text
+  while the game has text input started, and phone keyboards work by
+  composition (IME/autocorrect), where the characters never reach SDL at all.
 * Only the loading screen shows at first; the game takes over once you press PLAY.
 
 ## Build
