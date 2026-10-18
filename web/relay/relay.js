@@ -75,6 +75,12 @@ function sendFile(file, res) {
 /** room -> { room, host, clients: Map<id, peer>, nextId } */
 const rooms = new Map();
 
+// Control frame for "the room already has another host". It travels as a normal
+// binary frame because some proxies (Render's, for instance) do not deliver the
+// WebSocket close frame the relay sends right after the handshake. 0xFF is never
+// a valid source id, so the game can tell it apart from a real datagram.
+const TAKEN_FRAME = Buffer.concat([Buffer.from([0xff]), Buffer.from('TAKEN', 'utf8')]);
+
 function log(...args) {
     console.log(new Date().toISOString().slice(11, 19), ...args);
 }
@@ -242,15 +248,20 @@ server.on('upgrade', (req, socket) => {
         const old = r.host;
         const oldAlive = old && old.socket && !old.socket.destroyed && !old.socket.writableEnded && old.socket.writable;
         if (oldAlive) {
-            // The room already has a live host: reject the second one so two
+            // The room already has a live host: we reject the second one so two
             // people do not "steal" the room in a reconnection loop.
             log(`[${roomName}] room taken: rejecting the second host`);
-            const reason = Buffer.from('room taken', 'utf8');
-            const payload = Buffer.alloc(2 + reason.length);
-            payload.writeUInt16BE(4001, 0);
-            reason.copy(payload, 2);
-            try { writeFrame(peer, 0x8, payload); } catch (e) {}
-            try { socket.end(); } catch (e) {}
+            // First the control frame (this is what the game looks at, it always
+            // arrives), and a moment later the proper WebSocket close.
+            try { writeFrame(peer, 0x2, TAKEN_FRAME); } catch (e) {}
+            setTimeout(() => {
+                const reason = Buffer.from('room taken', 'utf8');
+                const payload = Buffer.alloc(2 + reason.length);
+                payload.writeUInt16BE(4001, 0);
+                reason.copy(payload, 2);
+                try { writeFrame(peer, 0x8, payload); } catch (e) {}
+                try { socket.end(); } catch (e) {}
+            }, 250);
             return;
         }
         if (old) { log(`[${roomName}] the previous host was down: replacing it`); }

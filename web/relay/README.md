@@ -25,6 +25,14 @@ Every binary WebSocket message is:
 * `destination`: `0` = all clients, `1` = host, `N` = client N.
 * `source`: always set by the relay (`1` = host, `2+` = clients of that room).
 
+There is one **control frame** going the other way: when a second player tries to
+host a room that already has a host, the relay sends `0xFF` + `TAKEN` (`0xFF` is
+never a valid source id) and then closes the connection with `4001 room taken`. The
+game shows *"That room already has a host. Press Join to play with them."* The
+control frame matters because some proxies (Render's, for instance) do not deliver
+the WebSocket close frame that follows the handshake, while normal binary frames
+always arrive.
+
 The game knows nothing about any of this: it believes it is talking UDP to
 addresses `::ffff:10.0.0.<id>` (the `id` is exactly that `source`). The transport
 code is in `src/pc/network/socket/socket_web.c`.
@@ -85,8 +93,9 @@ machine or your LAN, which is exactly what Render needs.
   player waits ~30-60 s for it to wake up (the game keeps retrying the connection
   for ~30 s, so open the room and wait a moment before giving up).
 * One room = one host. If two people try to host the same name on the same relay,
-  the second one is rejected (`4001 room taken`) and the game tells the player to
-  press *Join* instead of silently leaving them alone in single player.
+  the second one receives the `0xFF TAKEN` control frame (and the `4001 room taken`
+  close) and the game tells the player to press *Join* instead of silently leaving
+  them alone in single player.
 * The page invites everybody into the public room `coop01`: the *Join* field already
   suggests that name and the room list shows the open rooms of all the players
   (host included), with their player count.

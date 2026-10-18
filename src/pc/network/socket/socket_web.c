@@ -141,6 +141,17 @@ EM_JS(int, webnet_js_begin, (int isHost, const char* roomC, const char* relayC),
         ws.onmessage = function (ev) {
             var b = new Uint8Array(ev.data);
             if (b.length < 1) { return; }
+            // Control frame from the relay: the room we tried to host already has
+            // a host. It comes as a normal binary frame (0xFF + "TAKEN") because
+            // some proxies do not deliver the WebSocket close frame. 0xFF is
+            // never a valid source id, so it cannot be confused with a datagram.
+            if (b[0] === 0xff && b.length >= 6 && b[1] === 84 && b[2] === 65 && b[3] === 75 && b[4] === 69 && b[5] === 78) {
+                N.roomTaken = 1;
+                N.role = 0;
+                console.log('[webnet] room "' + N.room + '" already has another host: press Join to enter it');
+                try { ws.close(); } catch (e) {}
+                return;
+            }
             if (N.inbox.length > 8192) { return; } // flood protection
             N.inbox.push({ src: b[0], data: b.subarray(1) });
         };
