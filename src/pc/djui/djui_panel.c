@@ -145,6 +145,14 @@ void djui_panel_update(void) {
         extern void djui_panel_join_direct_poll(void);
         djui_panel_join_direct_poll();
     }
+    // If the relay refused us as host (the room already has one), tell the player
+    // what to do instead of leaving them alone in single player without a word.
+    {
+        extern int webnet_room_was_taken(void);
+        if (webnet_room_was_taken()) {
+            djui_popup_create("That room already has a host.\nPress Join to play with them.", 2);
+        }
+    }
 #endif
     if (sPanelList == NULL) { return; }
     if (sPanelList->base == NULL) { return; }

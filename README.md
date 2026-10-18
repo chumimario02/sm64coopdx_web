@@ -40,8 +40,8 @@ You only have to do this once per browser. Then press **PLAY**.
 
 ## Multiplayer
 
-* **Create**: you are asked for a room name (e.g. `sala123`) — share that name with your friends.
-* **Join**: the game lists the open rooms of the relay and you click the one you want.
+* **Create**: you open the public room `coop01` (the name comes pre-filled and can be changed in the *Room* field).
+* **Join**: the field already suggests `coop01`, so pressing *Join* twice gets you in; you can also pick any other open room from the list the relay gives you.
 * No relay reachable? The game just starts in single player.
 
 **On your LAN:** your friends open `http://YOUR-LOCAL-IP:4321/sm64coopdx.html` and press *Join*. If they don't see your room, allow port `4321` in the Windows firewall.
@@ -54,7 +54,7 @@ cloudflared tunnel --url http://localhost:4321
 
 Share the `https://something.trycloudflare.com` URL. The page and the relay go through the same tunnel (Cloudflare supports WebSockets) and the game finds the relay by itself, since it uses the same host the page was served from.
 
-**Hosting the relay** (Render, Railway, Fly…) also works, and you can point the page at it with `?relay=your-relay.example.com`. See [web/relay/README.md](web/relay/README.md) for the details and the frame protocol.
+**Hosting the relay** on Render takes one click: the repository brings a [`render.yaml`](render.yaml) blueprint, and the page points at it with `?relay=your-relay.onrender.com` (the browser remembers the address). See [web/relay/README.md](web/relay/README.md) for the steps, the details and the frame protocol.
 
 ## Your ROM, your saves, your mods
 

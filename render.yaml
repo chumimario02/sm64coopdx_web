@@ -1,0 +1,25 @@
+# Render Blueprint: deploys the sm64coopdx-web relay (the WebSocket server) for free.
+#
+# How to use it:
+#   1. Push this repository to GitHub.
+#   2. In Render: New + -> Blueprint -> pick this repository -> Apply.
+#   3. Render reads this file and creates the service "sm64coopdx-relay".
+#   4. Your relay ends up at https://<name>.onrender.com (check /healthz).
+#   5. Open the game page with ?relay=<name>.onrender.com (see web/relay/README.md).
+#
+# The relay has no dependencies and serves no files unless a folder is passed, so
+# it is only the room server: the game page can live anywhere (a static host, or
+# the player's own machine).
+services:
+  - type: web
+    name: sm64coopdx-relay
+    runtime: node
+    plan: free
+    rootDir: web/relay
+    buildCommand: npm install --omit=dev
+    startCommand: node relay.js
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"

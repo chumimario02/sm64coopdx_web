@@ -75,10 +75,30 @@ EM_JS(int, webnet_js_begin, (int isHost, const char* roomC, const char* relayC),
         //   the relay live on the SAME host and port (443), so that is enough.
         cfg = (location.protocol === 'https:') ? location.host : (location.hostname + ':4321');
     }
-    // we keep just "host:port" (we accept ws:// or https:// being typed)
+    // we keep just "host:port" (we accept ws://, wss://, http:// or https:// being typed)
     cfg = String(cfg);
-    if (cfg.indexOf("://") >= 0) { cfg = cfg.substring(cfg.indexOf("://") + 3); }
-    var secure = (typeof location !== 'undefined' && location.protocol === 'https:');
+    var forcedScheme = null;
+    var schemeAt = cfg.indexOf("://");
+    if (schemeAt >= 0) {
+        var scheme = cfg.substring(0, schemeAt).toLowerCase();
+        forcedScheme = (scheme === "wss" || scheme === "https");
+        cfg = cfg.substring(schemeAt + 3);
+    }
+
+    // TLS is used for anything that is not this machine or the LAN: a relay in the
+    // cloud (Render, for instance) only accepts wss://. If the player typed a
+    // scheme, that one wins.
+    var relayHost = cfg.split("/")[0];
+    if (relayHost.charAt(0) === "[") { relayHost = relayHost.substring(0, relayHost.indexOf("]") + 1); }
+    else { relayHost = relayHost.split(":")[0]; }
+    relayHost = relayHost.toLowerCase();
+    var isLocal = relayHost === "localhost" || relayHost === "127.0.0.1" ||
+                  relayHost === "::1" || relayHost === "[::1]" || relayHost === "0.0.0.0" ||
+                  /^10\./.test(relayHost) || /^192\.168\./.test(relayHost) ||
+                  /^172\.(1[6-9]|2[0-9]|3[01])\./.test(relayHost);
+    var secure = (forcedScheme !== null)
+        ? forcedScheme
+        : ((typeof location !== 'undefined' && location.protocol === 'https:') || !isLocal);
     N.httpBase = (secure ? 'https://' : 'http://') + cfg;
     N.url = (secure ? 'wss://' : 'ws://') + cfg + '/ws?room=' + encodeURIComponent(room) + '&role=' + (isHost ? 'host' : 'client');
 
@@ -91,7 +111,7 @@ EM_JS(int, webnet_js_begin, (int isHost, const char* roomC, const char* relayC),
             N.ws = null;
         }
         var ws;
-        try { ws = new WebSocket(N.url); } catch (e) { return retry('excepcion: ' + e); }
+        try { ws = new WebSocket(N.url); } catch (e) { return retry('exception: ' + e); }
         ws.binaryType = 'arraybuffer';
         ws.onopen = function () {
             N.status = 'open';
@@ -128,12 +148,13 @@ EM_JS(int, webnet_js_begin, (int isHost, const char* roomC, const char* relayC),
             if (N.ws === ws) { N.ws = null; }
             N.status = 'closed';
             if (ev && ev.code === 4001) {
-                // The relay is telling us that this room already has another
-                // live host: we stop insisting (we keep playing in single
-                // player) instead of fighting over the room in a reconnection
-                // loop.
+                // The relay is telling us that this room already has another live
+                // host: we stop insisting instead of fighting over the room in a
+                // reconnection loop, and we raise a flag so the game can tell the
+                // player to press Join (see webnet_room_was_taken).
                 N.role = 0;
-                console.log('[webnet] room "' + N.room + '" already has another host: staying without relay');
+                N.roomTaken = 1;
+                console.log('[webnet] room "' + N.room + '" already has another host: press Join to enter it');
                 return;
             }
             retry('closed');
@@ -281,12 +302,33 @@ EM_JS(int, webnet_js_rooms_get, (int i, double ptr, int maxLen, double clientsPt
 // Room name chosen in the "Create" menu (web build).
 char gWebRoomName[64] = { 0 };
 
+// PUBLIC room: the page is meant to be shared (a Discord link, for instance), so
+// the default room has a fixed, easy name and everybody can get in: the host
+// presses Create, the rest press Join (the field already suggests this name) or
+// pick the room from the relay's list.
+#define WEB_PUBLIC_ROOM "coop01"
+
+const char* webnet_public_room(void) {
+    return WEB_PUBLIC_ROOM;
+}
+
+// Set from JavaScript when the relay rejected us as host because the room already
+// had one (reading it clears the flag).
+EM_JS(int, webnet_js_room_taken, (), {
+    var N = globalThis.__webnet;
+    if (N && N.roomTaken) { N.roomTaken = 0; return 1; }
+    return 0;
+});
+
+int webnet_room_was_taken(void) {
+    return webnet_js_room_taken();
+}
+
 void webnet_ensure_room_name(void) {
     if (gWebRoomName[0] != '\0') { return; }
-    // Default name: easy to read and to say out loud. It can be changed in the
-    // "Room" field of the create game menu.
-    unsigned int n = (unsigned int)(emscripten_get_now() * 7.0) % 1000u;
-    snprintf(gWebRoomName, sizeof(gWebRoomName), "room%03u", n);
+    // Public name by default. It can still be changed in the "Room" field of the
+    // create game menu (handy if another host is already using the name).
+    snprintf(gWebRoomName, sizeof(gWebRoomName), "%s", WEB_PUBLIC_ROOM);
 }
 
 void webnet_begin(int networkType) {

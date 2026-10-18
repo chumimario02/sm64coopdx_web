@@ -336,6 +336,18 @@
     showOverlay(true);
   };
 
+  // The relay address can be given with ?relay=host:port (or ?relay=wss://host) and
+  // we remember it, so a hosted page only has to be opened once with the parameter
+  // and later visits point at the same relay on their own.
+  try {
+    var relayFromUrl = new URLSearchParams(location.search).get('relay');
+    if (relayFromUrl) { localStorage.setItem('sm64relay', relayFromUrl); }
+    if (!Module['WEB_RELAY']) {
+      var savedRelay = localStorage.getItem('sm64relay');
+      if (savedRelay) { Module['WEB_RELAY'] = savedRelay; }
+    }
+  } catch (e) { console.log('[webnet] could not read the saved relay: ' + e); }
+
   Module['onRuntimeInitialized'] = function () {
     if (previousOnRuntimeInitialized) { previousOnRuntimeInitialized(); }
     prepare();

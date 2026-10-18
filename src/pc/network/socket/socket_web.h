@@ -49,6 +49,8 @@ void webnet_make_host_addr(struct sockaddr_in6* addr);
 // Web menu: room name and room list from the relay
 extern char gWebRoomName[64];
 void webnet_ensure_room_name(void);
+const char* webnet_public_room(void);                          // name of the public room (see web/README.md)
+int  webnet_room_was_taken(void);                              // 1 if the relay refused us as host (room taken)
 void webnet_rooms_fetch(void);                                 // asks the relay for the list (asynchronous)
 int  webnet_rooms_state(void);                                 // 0 = loading, 1 = list ready, 2 = error
 int  webnet_rooms_count(void);

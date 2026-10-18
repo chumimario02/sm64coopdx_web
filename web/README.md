@@ -67,11 +67,17 @@ Then open `http://127.0.0.1:4321/sm64coopdx.html` (the relay maps `/` to
 `/index.html`, so you can also copy `sm64coopdx.html` to `index.html`). The relay
 serves the page **and** acts as the room server, so a single address gives you both.
 
-* **Create**: it asks for a room name (e.g. `room123`).
-* **Join**: it lists the open rooms of the relay.
+* **Create**: it opens the public room `coop01` (pre-filled, and the *Room* field lets you change it).
+* **Join**: the field already suggests `coop01`; you can also click any other open room in the list.
+* **The list is shared**: the *Join* panel shows **every** open room of the relay
+  (name and number of players) and refreshes itself every few seconds, so all the
+  players that have the page see each other's rooms. Up to 8 rooms are listed.
+* **Room already taken?** If you press *Create* with a name that already has a
+  live host, the game warns you and tells you to press *Join* instead of leaving
+  you alone in single player.
 * If the relay is missing, the game starts in single player without complaining.
 
-Deployment details (LAN, Cloudflare tunnel, Render) are in
+Deployment details (LAN, Cloudflare tunnel, the Render blueprint) are in
 [`web/relay/README.md`](relay/README.md).
 
 ## The ROM and the saved data

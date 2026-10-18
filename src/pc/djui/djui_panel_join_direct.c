@@ -18,9 +18,9 @@ static struct DjuiInputbox* sInputboxIp = NULL;
 #ifdef TARGET_WEB
 // List of open rooms returned by the relay.
 // VERY IMPORTANT: no element is created or destroyed while the game runs (that
-// blocks the game). 4 fixed buttons are created when the panel opens and
+// blocks the game). 8 fixed buttons are created when the panel opens and
 // afterwards ONLY their text and visibility are changed.
-#define WEB_ROOM_SLOTS 4
+#define WEB_ROOM_SLOTS 8
 
 static struct DjuiButton* sRoomButtons[WEB_ROOM_SLOTS] = { NULL };
 static struct DjuiText* sRoomsStateText = NULL;
@@ -188,8 +188,9 @@ static void djui_panel_join_direct_ip_text_set(struct DjuiInputbox* inputbox1) {
     char buffer[256] = { 0 };
 #ifdef TARGET_WEB
     // On the web the field is the ROOM NAME (there is no IP or port): we remember
-    // the last room you joined.
-    snprintf(buffer, 256, "%s", configJoinIp);
+    // the last room you joined and, when there is none, we suggest the public room
+    // so that pressing Join twice is enough to get in.
+    snprintf(buffer, 256, "%s", (configJoinIp[0] != '\0') ? configJoinIp : webnet_public_room());
 #else
     if (strlen(configJoinIp) > 0 && configJoinPort != DEFAULT_PORT) {
         if (snprintf(buffer, 256, "%s:%d", configJoinIp, configJoinPort) < 0) { LOG_INFO("truncating IP"); }
@@ -230,6 +231,17 @@ void djui_panel_join_direct_poll(void) {
     if (sRoomsWaiting) {
         if (webnet_rooms_state() == 0) { return; }  // the relay has not answered yet
         sRoomsWaiting = false;
+    }
+
+    // The list refreshes on its own every ~5 s (150 frames at 30 steps/s) so every
+    // player sees the rooms of the others as they open and close.
+    {
+        static u32 sFramesSinceFetch = 0;
+        if (++sFramesSinceFetch >= 150) {
+            sFramesSinceFetch = 0;
+            webnet_rooms_fetch();
+            sRoomsWaiting = true;
+        }
     }
 
     const int count = webnet_rooms_count();
