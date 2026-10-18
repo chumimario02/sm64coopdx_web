@@ -29,12 +29,20 @@ details of the build.
   [Mods](#mods)).
 * **Touch controls**: the page can show an on-screen N64 pad (stick plus A, B, Z,
   L, R, START and the four C buttons) for phones and tablets. The **Touch
-  controls** button sits in the bottom right corner and the choice is remembered.
+  controls** button sits in the top left corner and the choice is remembered.
   The page only writes the pad state into `globalThis.__sm64touch`
   (`{ buttons, stickX, stickY }`, the usual N64 bit mask) and the game reads it
   in `controller_keyboard.c`: no key presses are faked, so rebinding keys does
   not break it, and the stick stays analog. It is merged with the keyboard, so
   both can be used at the same time.
+* **Chat and the phone keyboard**: the pad has a **CHAT** button (it opens and
+  closes the chat like the chat key does) and a **⌨** button that shows the
+  phone's on-screen keyboard. SDL/Emscripten never creates the editable element
+  Android needs for that, so the page keeps a hidden `<input>` of its own,
+  focuses it on demand and sends what is typed to the game as text events
+  (`SDL_TEXTINPUT`), which is the same path a physical keyboard uses. The game
+  reports whether the chat is open (`__sm64touch.chatOpen`) so the keyboard
+  appears and disappears with it.
 * Only the loading screen shows at first; the game takes over once you press PLAY.
 
 ## Build

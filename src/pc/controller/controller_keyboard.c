@@ -17,6 +17,7 @@
 
 #ifdef TARGET_WEB
 #include <emscripten.h>
+#include "pc/djui/djui_chat_box.h"
 
 // ---------------------------------------------------------------------------
 // Touch controls (phones and tablets)
@@ -45,6 +46,24 @@ EM_JS(int, web_touch_axis, (int which), {
     if (r > 127) { r = 127; }
     if (r < -128) { r = -128; }
     return r | 0;
+});
+
+// Acciones de un solo toque (de momento, el chat). La pagina las encola en
+// globalThis.__sm64touch.actions y el juego las consume aqui abajo.
+#define WEB_TOUCH_ACTION_CHAT 1
+
+EM_JS(int, web_touch_action, (void), {
+    var T = globalThis.__sm64touch;
+    if (!T || !T.actions || T.actions.length === 0) { return 0; }
+    return T.actions.shift() | 0;
+});
+
+// La pagina necesita saber si el chat esta abierto para ensenar u ocultar el
+// teclado del movil a la vez (Android lo mantiene mientras un input tenga el
+// foco). El juego es el unico que lo sabe: el chat se cierra solo al enviar.
+EM_JS(void, web_touch_report_chat, (int open), {
+    var T = globalThis.__sm64touch;
+    if (T) { T.chatOpen = !!open; }
 });
 #endif
 
@@ -167,6 +186,19 @@ static void keyboard_read(OSContPad *pad) {
     const int touchY = web_touch_axis(1);
     if (touchX != 0) { pad->stick_x = (s8) touchX; }
     if (touchY != 0) { pad->stick_y = (s8) touchY; }
+
+    // One shot actions coming from the page. This is the one place the game
+    // walks through once per frame, so it is where the page's queued actions
+    // are drained. The chat button opens and closes the chat exactly like the
+    // chat key does, so it keeps working if the player rebinds that key.
+    web_touch_report_chat(gDjuiChatBoxFocus ? 1 : 0);
+    int touchAction = web_touch_action();
+    while (touchAction != 0) {
+        if (touchAction == WEB_TOUCH_ACTION_CHAT) {
+            djui_chat_box_toggle();
+        }
+        touchAction = web_touch_action();
+    }
 #endif
 }
 

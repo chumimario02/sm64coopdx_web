@@ -57,10 +57,19 @@
   #fullscreen.visible { display:block; }
 
   /* --- touch controls (phones and tablets) --- */
-  #touchToggle { position:fixed; right:12px; bottom:64px; z-index:30; padding:9px 13px; border:0; border-radius:10px;
+  #touchToggle { position:fixed; left:12px; top:12px; z-index:30; padding:9px 13px; border:0; border-radius:10px;
                  background:#ffffff1f; color:#fff; font-size:13px; font-weight:800; cursor:pointer;
                  box-shadow:0 2px 8px #0008; }
   #touchToggle.on { background:#3ddc84; color:#062510; }
+  /* Invisible (but focusable!) input: Android only shows its on-screen keyboard
+     when a real editable element has the focus, and SDL/Emscripten does not
+     create one. What is typed here reaches the game as text (SDL_TEXTINPUT). */
+  #kbd { position:fixed; left:50%; top:50%; width:1px; height:1px; padding:0; border:0; margin:0;
+         opacity:0.01; font-size:16px; z-index:1; caret-color:transparent; }
+  /* Chat and keyboard live up in the corner, out of the way of the thumbs. */
+  #extra { position:absolute; right:3vmin; top:3vmin; display:flex; align-items:center; gap:2vmin; pointer-events:none; }
+  #extra .btn { pointer-events:auto; height:8.5vmin; min-width:0; padding:0 3vmin; }
+  #touchpad .btn.on { background:#2b6cffdd; border-color:#fff; color:#fff; }
   #touchpad { position:fixed; inset:0; z-index:24; display:none; pointer-events:none; touch-action:none;
               -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent; }
   #touchpad.visible { display:block; }
@@ -117,8 +126,15 @@
      globalThis.__sm64touch and the game reads it (controller_keyboard.c). -->
 <button id="touchToggle" title="On-screen controls for phones">🎮 Touch controls</button>
 
+<input id="kbd" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+       aria-hidden="true" tabindex="-1">
+
 <div id="touchpad">
   <div id="stick"><i id="stickKnob"></i></div>
+  <div id="extra">
+    <button class="btn pill" id="chatBtn" title="Open or close the chat">💬 CHAT</button>
+    <button class="btn pill" id="kbdBtn" title="Show the on-screen keyboard">⌨</button>
+  </div>
   <div id="right">
     <div class="row">
       <button class="btn pill" data-btn="l">L</button>
@@ -433,7 +449,7 @@ var TOUCH_BITS = {
   cup: 0x0008, cdown: 0x0004, cleft: 0x0002, cright: 0x0001,
   l: 0x0020, r: 0x0010
 };
-var touchPad = { buttons: 0, stickX: 0, stickY: 0 };
+var touchPad = { buttons: 0, stickX: 0, stickY: 0, actions: [], chatOpen: false };
 globalThis.__sm64touch = touchPad;
 
 var elTouchToggle = document.getElementById('touchToggle');
@@ -465,9 +481,98 @@ function touchSetEnabled(on) {
   elTouchPad.className = touchEnabled ? 'visible' : '';
   elTouchToggle.className = touchEnabled ? 'on' : '';
   elTouchToggle.textContent = touchEnabled ? '🎮 Touch: ON' : '🎮 Touch controls';
-  if (!touchEnabled) { touchReleaseAll(); }
+  if (!touchEnabled) { touchReleaseAll(); kbdShow(false); }
   touchCheckRotate();
 }
+
+// --- chat and the phone keyboard -------------------------------------------
+// SDL/Emscripten never asks Android for its on-screen keyboard (that needs a
+// real editable element with the focus), so we keep one of our own and hand the
+// characters to the game as text events. That way the chat, the player name and
+// every other text box can be filled in from the phone.
+var elKbd     = document.getElementById('kbd');
+var elChatBtn = document.getElementById('chatBtn');
+var elKbdBtn  = document.getElementById('kbdBtn');
+
+var kbdFromChat = false;
+var chatWasOpen = false;
+
+function kbdShow(show) {
+  if (!elKbd) { return; }
+  var focused = (document.activeElement === elKbd);
+  if (show && !focused) {
+    try { elKbd.focus({ preventScroll: true }); } catch (e) { try { elKbd.focus(); } catch (e2) {} }
+  } else if (!show && focused) {
+    elKbd.blur();
+  }
+  if (elKbdBtn) {
+    elKbdBtn.className = (document.activeElement === elKbd) ? 'btn pill on' : 'btn pill';
+  }
+}
+
+// One character, as if the keyboard had typed it. SDL reads the character from
+// charCode/keyCode, and a synthetic event only exposes those if we define them.
+function kbdEmitChar(ch) {
+  var code = ch.charCodeAt(0);
+  var ev;
+  try {
+    ev = new KeyboardEvent('keypress', { key: ch, bubbles: true, cancelable: true });
+  } catch (e) {
+    ev = document.createEvent('KeyboardEvent');
+    ev.initKeyboardEvent('keypress', true, true, window, ch, 0, '', false, '');
+  }
+  try { Object.defineProperty(ev, 'charCode', { get: function () { return code; } }); } catch (e) {}
+  try { Object.defineProperty(ev, 'keyCode',  { get: function () { return code; } }); } catch (e) {}
+  try { Object.defineProperty(ev, 'which',    { get: function () { return code; } }); } catch (e) {}
+  window.dispatchEvent(ev);
+}
+
+if (elKbd) {
+  // A native keypress would reach SDL as well and every letter would be typed
+  // twice, so we keep that one to ourselves and rebuild the text from "input",
+  // which is the event Android keyboards do send (autocorrect included).
+  elKbd.addEventListener('keypress', function (ev) { ev.stopPropagation(); });
+  elKbd.addEventListener('input', function (ev) {
+    if (ev.isComposing) { return; }        // still composing: wait for the final text
+    var text = elKbd.value;
+    elKbd.value = '';
+    for (var i = 0; i < text.length; i++) { kbdEmitChar(text.charAt(i)); }
+  });
+  elKbd.addEventListener('blur', function () {
+    elKbd.value = '';
+    if (elKbdBtn) { elKbdBtn.className = 'btn pill'; }
+  });
+}
+
+if (elChatBtn) {
+  elChatBtn.addEventListener('pointerdown', function (ev) {
+    ev.preventDefault();
+    kbdShow(true);                    // inside the touch gesture: Android demands it here
+    kbdFromChat = true;
+    touchPad.actions.push(1);         // 1 = chat (see controller_keyboard.c)
+  });
+  elChatBtn.addEventListener('contextmenu', function (ev) { ev.preventDefault(); });
+}
+
+if (elKbdBtn) {
+  elKbdBtn.addEventListener('pointerdown', function (ev) {
+    ev.preventDefault();
+    kbdFromChat = false;
+    kbdShow(document.activeElement !== elKbd);
+  });
+  elKbdBtn.addEventListener('contextmenu', function (ev) { ev.preventDefault(); });
+}
+
+// The game tells us whether the chat is open, so the phone keyboard shows and
+// hides together with it (for example when a message is sent with Enter).
+setInterval(function () {
+  if (!touchEnabled || !elKbd) { return; }
+  var open = !!touchPad.chatOpen;
+  if (open === chatWasOpen) { return; }
+  chatWasOpen = open;
+  if (open) { kbdFromChat = true; kbdShow(true); }
+  else if (kbdFromChat) { kbdFromChat = false; kbdShow(false); }
+}, 250);
 
 // --- the stick -------------------------------------------------------------
 var stickPointer = null;
