@@ -237,6 +237,21 @@
     buttons.appendChild(cancelButton);
     box.appendChild(buttons);
     box.appendChild(uploadStatus);
+
+    // Mods already added from this browser: each one can be deleted from here.
+    var modsBox = document.createElement('div');
+    modsBox.style.cssText = 'margin-top:16px;border-top:1px solid #ffffff1f;padding-top:14px;';
+
+    var modsTitle = document.createElement('div');
+    modsTitle.textContent = 'Mods added in this browser';
+    modsTitle.style.cssText = 'font-size:15px;font-weight:800;margin-bottom:8px;';
+
+    modsList = document.createElement('div');
+    modsList.style.cssText = 'max-height:200px;overflow:auto;display:flex;flex-direction:column;gap:6px;font-size:13px;';
+
+    modsBox.appendChild(modsTitle);
+    modsBox.appendChild(modsList);
+    box.appendChild(modsBox);
     uploadOverlay.appendChild(box);
     document.body.appendChild(uploadOverlay);
 
@@ -277,6 +292,94 @@
     if (!uploadStatus) { return; }
     uploadStatus.textContent = text || '';
     uploadStatus.style.color = isError ? '#ffb4b4' : '#9fb0d8';
+  }
+
+  // -------------------------------------------------------------------------
+  // Mods that were added from this browser live in the writable area
+  // (IndexedDB); the ones that ship with the build live in /mods and cannot be
+  // removed from here. Deleting only takes effect after reloading the page.
+  // -------------------------------------------------------------------------
+  var MODS_DIR = WRITE_DIR + '/mods';
+  var modsList = null;
+
+  function removeTree(FS, path) {
+    var info = FS.stat(path);
+    if (FS.isDir(info.mode)) {
+      var names = FS.readdir(path);
+      for (var i = 0; i < names.length; i++) {
+        if (names[i] === '.' || names[i] === '..') { continue; }
+        removeTree(FS, path + '/' + names[i]);
+      }
+      FS.rmdir(path);
+    } else {
+      FS.unlink(path);
+    }
+  }
+
+  function refreshModsList() {
+    if (!modsList) { return; }
+
+    modsList.innerHTML = '';
+
+    var FS = getFS();
+    var entries = [];
+    try {
+      if (FS && pathExists(FS, MODS_DIR)) {
+        var names = FS.readdir(MODS_DIR);
+        for (var i = 0; i < names.length; i++) {
+          if (names[i] === '.' || names[i] === '..') { continue; }
+          entries.push(names[i]);
+        }
+      }
+    } catch (e) {
+      console.log('[web-mods] could not list the mods folder: ' + e);
+    }
+    entries.sort();
+
+    if (entries.length === 0) {
+      var empty = document.createElement('div');
+      empty.textContent = 'No mods added yet in this browser.';
+      empty.style.cssText = 'color:#8f9dc4;font-size:12.5px;';
+      modsList.appendChild(empty);
+      return;
+    }
+
+    for (var k = 0; k < entries.length; k++) {
+      (function (name) {
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:8px;background:#0e1427;' +
+          'border:1px solid #ffffff14;border-radius:8px;padding:7px 10px;';
+
+        var label = document.createElement('div');
+        label.textContent = name;
+        label.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700;';
+
+        var del = document.createElement('button');
+        del.textContent = '🗑 Delete';
+        del.style.cssText = 'border:0;border-radius:7px;padding:6px 10px;cursor:pointer;font-size:12px;' +
+          'font-weight:800;color:#2a0b0b;background:linear-gradient(180deg,#ffd9d9,#ee9f9f);box-shadow:0 3px 0 #a85f5f;';
+
+        del.addEventListener('click', function () {
+          if (!window.confirm('Delete the mod "' + name + '" from this browser?')) { return; }
+          var fs = getFS();
+          if (!fs) { return; }
+          try {
+            removeTree(fs, MODS_DIR + '/' + name);
+            fs.syncfs(false, function (err) {
+              setOverlayStatus(err ? ('Save warning: ' + err)
+                                   : ('Deleted "' + name + '". Reload the page (F5) to apply it.'), !!err);
+              refreshModsList();
+            });
+          } catch (e) {
+            setOverlayStatus('Could not delete "' + name + '": ' + e, true);
+          }
+        });
+
+        row.appendChild(label);
+        row.appendChild(del);
+        modsList.appendChild(row);
+      })(entries[k]);
+    }
   }
 
   function copySelected(list) {
@@ -333,6 +436,7 @@
     uploadStaging = staging;
     createOverlay();
     setOverlayStatus('', false);
+    refreshModsList();
     showOverlay(true);
   };
 

@@ -746,6 +746,22 @@ static void web_delete_tree(const char* path) {
     rmdir(path);
 }
 
+// The loading page (web/shell.html) asks for the player's name before the game
+// starts. It leaves it in globalThis.__sm64PlayerName; here we copy it into
+// configPlayerName, overriding the value saved in the config file.
+EM_JS(void, web_player_name_get, (char* buffer, int size), {
+    var name = (typeof globalThis.__sm64PlayerName === 'string') ? globalThis.__sm64PlayerName : '';
+    // MEMORY64 builds hand pointers over as BigInt: stringToUTF8 needs a Number.
+    if (buffer && size > 0) { stringToUTF8(name, Number(buffer), size); }
+});
+
+void web_apply_player_name(void) {
+    char name[MAX_CONFIG_STRING] = { 0 };
+    web_player_name_get(name, sizeof(name));
+    if (name[0] == '\0') { return; }
+    snprintf(configPlayerName, sizeof(configPlayerName), "%s", name);
+}
+
 // Called from web/pre.js once it has copied the chosen files into the staging
 // folder. It only sets the flag: the real work happens in
 // web_add_files_process() from the game loop, so DJUI and the mods are touched

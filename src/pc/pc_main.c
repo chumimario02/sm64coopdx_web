@@ -638,6 +638,10 @@ int main(int argc, char *argv[]) {
 
     configfile_load();
     WEBBOOT(3); printf("[web-boot] 3 configfile_load ok\n"); fflush(stdout);
+#ifdef __EMSCRIPTEN__
+    // The name typed on the loading page wins over the saved one.
+    web_apply_player_name();
+#endif
 
     legacy_folder_handler();
     WEBBOOT(4); printf("[web-boot] 4 legacy_folder_handler ok\n"); fflush(stdout);

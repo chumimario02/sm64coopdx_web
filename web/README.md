@@ -132,12 +132,25 @@ write directory. From there the game's own `mod_import_file()` imports them, the
 same code path as dragging and dropping a mod onto the desktop build, so mods,
 dynos packs and palettes all work the same way.
 
+That same window lists the mods **added from this browser** and each one has a
+**Delete** button (confirm, then reload the page to apply it). The mods that ship
+inside the build live in the read-only `/mods` folder and are enabled or disabled
+from the game's own mods menu.
+
+## Player name
+
+Pressing **PLAY** asks for the player's name before the game starts (the field is
+empty the first time and remembers the last name typed). The loading page leaves
+it in `globalThis.__sm64PlayerName` and `web_apply_player_name()` in
+`src/pc/utils/misc.c` copies it into `configPlayerName` right after the config
+file is read.
+
 ## How it is put together (for whoever touches the code)
 
 | File | Role |
 |---|---|
-| `web/shell.html` | loading screen, ROM panel, PLAY button (`--shell-file`) |
-| `web/pre.js` | mounts IDBFS and exposes the ROM writing helper (`--pre-js`) |
+| `web/shell.html` | loading screen, ROM panel, name prompt, PLAY button (`--shell-file`) |
+| `web/pre.js` | mounts IDBFS, ROM helper and mods list/deletion (`--pre-js`) |
 | `web/relay/relay.js` | WebSocket relay + static file server |
 | `src/pc/network/socket/socket_web.c` | virtual sockets on top of WebSocket |
 | `src/pc/fs/fs.c`, `src/pc/platform.c` | write directory (the one that gets persisted) |

@@ -48,6 +48,23 @@
                background: linear-gradient(180deg, #dbe6ff, #9fb8ee); box-shadow: 0 4px 0 #5f74a8; }
   #romButton:active { transform: translateY(2px); box-shadow: 0 2px 0 #5f74a8; }
   #romInput { display:none; }
+
+/* Name prompt: shown when the player presses PLAY, before the game boots. */
+#nameBox { position:fixed; inset:0; z-index:70; display:none; align-items:center; justify-content:center;
+  background:#000c; padding:20px; }
+#nameBox.on { display:flex; }
+#nameBox .card { width:min(520px, 92vw); background:#141a2e; border:2px solid #ffffff26; border-radius:16px;
+  padding:22px 24px; text-align:center; color:#fff; box-shadow:0 24px 70px #000b;
+  font-family:system-ui,"Segoe UI",Roboto,Arial,sans-serif; }
+#nameBox h2 { margin:0 0 8px; font-size:22px; font-weight:900; }
+#nameBox p { margin:0 0 16px; font-size:13.5px; line-height:1.5; color:#c9d3f2; }
+#nameInput { width:100%; box-sizing:border-box; padding:13px 16px; font-size:17px; font-weight:700;
+  border-radius:10px; border:2px solid #ffffff33; background:#0b1020; color:#fff; outline:none; text-align:center; }
+#nameInput:focus { border-color:#f5c518; }
+#nameGo { margin-top:16px; padding:14px 42px; font-size:18px; font-weight:900; border:0; border-radius:12px;
+  cursor:pointer; color:#0b1020; background:linear-gradient(180deg,#ffe08a,#f5c518); box-shadow:0 6px 0 #a97b00; }
+#nameGo:active { transform:translateY(3px); box-shadow:0 3px 0 #a97b00; }
+#nameHint { margin-top:10px; font-size:12px; color:#9fb0d8; min-height:14px; }
   #romStatus { margin-top:8px; font-size:12px; color:#9fb0d8; }
   #romStatus.error { color:#ff9c9c; } #romStatus.ok { color:#7ff0b0; }
   .footer { position:fixed; bottom:10px; left:0; right:0; padding:0 16px; font-size:11.5px; color:#8fa0c8; text-align:center; }
@@ -128,6 +145,18 @@
 
   <div class="footer">Your ROM and your saves stay <b>in this browser only</b> (nothing is ever uploaded anywhere).<br>
     Multiplayer: press <b>Create</b> to open a room and <b>Join</b> to enter one — everyone who has this page can play together.</div>
+</div>
+
+<div id="nameBox">
+  <div class="card">
+    <h2>Your name</h2>
+    <p>Type the name the other players will see in the room and in the chat.<br>
+       Leave it empty to play as <b>Player</b>.</p>
+    <input id="nameInput" type="text" maxlength="24" placeholder="Your name" autocomplete="off"
+           autocorrect="off" autocapitalize="off" spellcheck="false">
+    <button id="nameGo">▶ PLAY</button>
+    <div id="nameHint"></div>
+  </div>
 </div>
 
 <button id="fullscreen" title="Fullscreen">⛶</button>
@@ -226,7 +255,9 @@ window.sm64RomInfo = function (info) {
     // so the panel stays out of the way.
     elRom.style.display = 'none';
   } else {
-    elRom.style.display = '';
+    // Note: the panel is hidden by CSS (#rom { display: none }), so clearing
+    // the inline style would leave it hidden: it has to be shown explicitly.
+    elRom.style.display = 'block';
   }
   if (hasRom) {
     elRom.className = 'ok';
@@ -300,7 +331,52 @@ function start() {
     else if (Module['_main']) { Module._main(0, 0); }
   } catch (e) { window.sm64Warning('Could not start the game: ' + e); }
 }
-elPlay.addEventListener('click', start);
+// ---------------------------------------------------------------------------
+// Name prompt: pressing PLAY asks for the player's name before the game boots
+// (the game reads it from globalThis.__sm64PlayerName, see misc.c). The field
+// starts empty the first time and remembers what was typed afterwards.
+// ---------------------------------------------------------------------------
+var elNameBox   = document.getElementById('nameBox');
+var elNameInput = document.getElementById('nameInput');
+var elNameGo    = document.getElementById('nameGo');
+var elNameHint  = document.getElementById('nameHint');
+
+// The game does not accept spaces (or backslashes) in player names.
+function cleanPlayerName(value) {
+  return (value || '').replace(/[\\\/]/g, '').replace(/\s+/g, '').slice(0, 20);
+}
+
+function updateNameHint() {
+  var name = cleanPlayerName(elNameInput.value);
+  elNameHint.textContent = 'You will play as ';
+  var b = document.createElement('b');
+  b.textContent = name || 'Player';
+  elNameHint.appendChild(b);
+}
+
+function openNameBox() {
+  if (started) { return; }
+  if (!hasRom) { setRomStatus('You need to place your ROM before playing.', 'error'); return; }
+  try { elNameInput.value = localStorage.getItem('sm64name') || ''; } catch (e) { elNameInput.value = ''; }
+  updateNameHint();
+  elNameBox.classList.add('on');
+  setTimeout(function () { elNameInput.focus(); elNameInput.select(); }, 50);
+}
+
+function playWithName() {
+  var name = cleanPlayerName(elNameInput.value) || 'Player';
+  try { localStorage.setItem('sm64name', name); } catch (e) {}
+  globalThis.__sm64PlayerName = name;
+  elNameBox.classList.remove('on');
+  start();
+}
+
+elPlay.addEventListener('click', openNameBox);
+elNameGo.addEventListener('click', playWithName);
+elNameInput.addEventListener('input', updateNameHint);
+elNameInput.addEventListener('keydown', function (e) {
+  if (e.key === 'Enter') { e.preventDefault(); playWithName(); }
+});
 elFullscreen.addEventListener('click', function () {
   if (document.fullscreenElement) {
     (document.exitFullscreen || document.webkitExitFullscreen).call(document);
