@@ -35,7 +35,7 @@
   @keyframes pulse { 0%,100% { transform:scale(1) } 50% { transform:scale(1.04) } }
 
   /* --- panel to place the ROM --- */
-  #rom { width:min(620px, 92vw); border:2px dashed #ffffff33; border-radius:14px; padding:14px 16px;
+  #rom { display:none; width:min(620px, 92vw); border:2px dashed #ffffff33; border-radius:14px; padding:14px 16px;
          background:#ffffff0d; transition: border-color .15s, background .15s; }
   #rom.ask { border-color:#ffd23f88; background:#ffd23f14; }
   #rom.ok  { border-color:#3ddc8488; background:#3ddc8414; }
@@ -203,6 +203,7 @@ var MD5_USA = '20b854b239203baf6c961b850a4a51a2';   // Super Mario 64 (USA) .z64
 var ROM_SIZE = 8388608;                              // 8 MB
 
 var hasRom = false;
+var romBundled = false;
 var runtimeReady = false;
 
 function setStatusText(text) { elStatus.textContent = text; }
@@ -218,6 +219,15 @@ function setRomStatus(text, className) {
 // The module tells us whether a ROM is already available (bundled in the build or saved).
 window.sm64RomInfo = function (info) {
   hasRom = !!(info && info.hasRom);
+  var bundled = !!(info && info.bundled);
+  romBundled = bundled;
+  if (hasRom && bundled) {
+    // The build already carries the ROM: there is nothing to place or replace,
+    // so the panel stays out of the way.
+    elRom.style.display = 'none';
+  } else {
+    elRom.style.display = '';
+  }
   if (hasRom) {
     elRom.className = 'ok';
     elRomTitle.innerHTML = '<span class="ok">ROM ready ✓</span>';
@@ -369,7 +379,7 @@ function toZ64(b, order) {
 var processingRom = false;
 
 function handleRomFile(file) {
-  if (!file || processingRom) { return; }
+  if (!file || processingRom || romBundled) { return; }
   processingRom = true;
   setRomStatus('Reading ' + file.name + ' (' + (file.size / 1048576).toFixed(1) + ' MB)…');
 

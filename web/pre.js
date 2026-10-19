@@ -131,7 +131,7 @@
       var path = romInFolder(FS);
       if (path) {
         console.log('[web-storage] rom available at ' + path);
-        setRomInfo({ hasRom: true, source: path === ROM_DEST_PATH ? 'saved in this browser' : path });
+        setRomInfo({ hasRom: true, bundled: !!romBytes, source: path === ROM_DEST_PATH ? 'saved in this browser' : path });
       } else {
         console.log('[web-storage] no rom: the loading screen has to ask for it');
         setRomInfo({ hasRom: false });
