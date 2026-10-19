@@ -14,6 +14,10 @@
 #include "pc/fs/fmem.h"
 #include "audio/load.h"
 
+#ifdef TARGET_WEB
+#include <emscripten.h>
+#endif
+
 struct AudioOverride {
     bool enabled;
     bool loaded;
@@ -189,14 +193,108 @@ static ma_engine sModAudioEngine;
 static struct DynamicPool *sModAudioPool;
 static bool sModAudioShuttingDown = false;
 
+#ifdef TARGET_WEB
+// The engine runs without a device on the web (see smlua_audio_custom_init), so
+// its frames are pulled by the game's own audio output. Keep the rate, the
+// channel count and the period identical to audio_sdl.c (32000 Hz, stereo).
+#define WEB_MOD_AUDIO_SAMPLE_RATE 32000
+#define WEB_MOD_AUDIO_CHANNELS    2
+#define WEB_MOD_AUDIO_PERIOD      512
+#define WEB_MOD_AUDIO_CHUNK       1024
+
+static ma_log sWebModAudioLog;
+static bool sWebModAudioReady = false;
+static unsigned int sWebModAudioCalls = 0;
+static f32 sWebModAudioBuffer[WEB_MOD_AUDIO_CHUNK * WEB_MOD_AUDIO_CHANNELS];
+
+// Diagnostic visible from the page (`globalThis.__modAudio`) so the engine state
+// can be checked without turning debug logging on.
+EM_JS(void, web_mod_audio_report, (int ready, int rate, int info, int calls, int res, int frames), {
+    globalThis.__modAudio = { ready: ready, rate: rate, info: info, calls: calls, res: res, frames: frames };
+});
+#endif
+
 static void smlua_audio_custom_init(void) {
     sModAudioPool = dynamic_pool_init();
 
+#ifdef TARGET_WEB
+    // The browser build has no backend miniaudio could use on its own (no
+    // threads, no Web Audio worklets), so the engine runs WITHOUT a device and
+    // the game pulls its frames from the normal sound output instead: see
+    // smlua_audio_web_mix() below and audio_sdl.c. Same rate and channels as the
+    // game's own audio (32000 Hz, stereo). The resource manager is compiled out
+    // (MA_NO_RESOURCE_MANAGER in miniaudio.h), so nothing here needs threads.
+    ma_log_init(NULL, &sWebModAudioLog);
+
+    ma_engine_config engineConfig = ma_engine_config_init();
+    engineConfig.pLog               = &sWebModAudioLog;
+    engineConfig.noDevice           = MA_TRUE;
+    engineConfig.sampleRate         = WEB_MOD_AUDIO_SAMPLE_RATE;
+    engineConfig.channels           = WEB_MOD_AUDIO_CHANNELS;
+    engineConfig.periodSizeInFrames = WEB_MOD_AUDIO_PERIOD;
+
+    ma_result result = ma_engine_init(&engineConfig, &sModAudioEngine);
+#else
     ma_result result = ma_engine_init(NULL, &sModAudioEngine);
+#endif
+
     if (result != MA_SUCCESS) {
         LOG_ERROR("failed to init Miniaudio: %d", result);
+        return;
+    }
+
+#ifdef TARGET_WEB
+    sWebModAudioReady = true;
+    web_mod_audio_report(sWebModAudioReady ? 1 : 0, (int) ma_engine_get_sample_rate(&sModAudioEngine), (int) result, 0, 0, 0);
+#endif
+}
+
+#ifdef TARGET_WEB
+// Called from audio_sdl.c for every block the game sends to the sound card: it
+// pulls the audio the mods are playing out of the engine and adds it (with
+// clipping) to the game's own samples, so songs and sound effects from mods are
+// heard in the same output as the game's music.
+void smlua_audio_web_mix(s16* samples, u32 frames) {
+    if (!sWebModAudioReady) { return; }
+
+    while (frames > 0) {
+        u32 chunk = (frames > WEB_MOD_AUDIO_CHUNK) ? WEB_MOD_AUDIO_CHUNK : frames;
+        ma_uint64 framesRead = 0;
+        ma_result readResult = ma_engine_read_pcm_frames(&sModAudioEngine, sWebModAudioBuffer, chunk, &framesRead);
+        if (readResult != MA_SUCCESS) { return; }
+        if (framesRead == 0) { return; }
+
+        u32 count = (u32)framesRead * WEB_MOD_AUDIO_CHANNELS;
+
+        // Touching JavaScript is not free and this runs ~30 times per second, so
+        // the page's diagnostic is only updated once in a while.
+        if ((sWebModAudioCalls++ & 31) == 0) {
+            web_mod_audio_report(1, (int) ma_engine_get_sample_rate(&sModAudioEngine), 0, (int) sWebModAudioCalls, (int) readResult, (int) framesRead);
+        }
+        for (u32 i = 0; i < count; i++) {
+            f32 mixed = (f32)samples[i] + sWebModAudioBuffer[i] * 32767.0f;
+            if (mixed > 32767.0f)  { mixed = 32767.0f; }
+            if (mixed < -32768.0f) { mixed = -32768.0f; }
+            samples[i] = (s16)mixed;
+        }
+
+        samples += count;
+        frames  -= (u32)framesRead;
     }
 }
+#endif
+
+#ifdef TARGET_WEB
+// Web: the mods' audio engine is created as soon as the game starts. The player
+// has already pressed PLAY, which is the gesture browsers require before audio
+// is allowed, so the first mod sound is not delayed and any problem is written
+// to the log instead of failing silently.
+void smlua_audio_utils_web_init(void) {
+    if (!sModAudioPool) { smlua_audio_custom_init(); }
+    printf("[web-audio] miniaudio mod engine: %u Hz, ready: %d\n", (unsigned) ma_engine_get_sample_rate(&sModAudioEngine), (int) sWebModAudioReady);
+    fflush(stdout);
+}
+#endif
 
 static struct ModAudio* find_mod_audio(const char *filepath) {
     struct DynamicPoolNode* node = sModAudioPool->tail;
@@ -847,6 +945,11 @@ void smlua_audio_custom_deinit(void) {
         pthread_mutex_unlock(&sSampleCopyMutex);
 
         ma_engine_uninit(&sModAudioEngine);
+
+#ifdef TARGET_WEB
+        sWebModAudioReady = false;
+        ma_log_uninit(&sWebModAudioLog);
+#endif
 
         audio_custom_shutdown();
         free(sModAudioPool);

@@ -27,8 +27,14 @@ details of the build.
 * **Mods**: the "open folder" buttons open a picker for a mod folder or `.zip`
   files, and the game's own importer takes it from there (see
   [Mods](#mods)).
-* **Touch controls**: the page can show an on-screen N64 pad (stick plus A, B, Z,
-  L, R, START and the four C buttons) for phones and tablets. The **Touch
+* **Mod audio**: songs and sound effects added by mods are heard on the web. The
+  browser build cannot give miniaudio a device of its own (no threads, no Web
+  Audio worklets), so the engine runs **without a device** and its frames are
+  pulled from the game's own audio output instead (`smlua_audio_utils.c` mixes
+  them into the queue filled by `audio_sdl.c`), at the same rate: 32000 Hz, stereo.
+* **Touch controls**: the page can show an on-screen N64 pad (stick, the D-pad
+  above it, plus A, B, Z, L, R, START and the four C buttons, and the **X** and
+  **Y** buttons that sm64coopdx added) for phones and tablets. The **Touch
   controls** button sits in the top left corner and the choice is remembered.
   The page only writes the pad state into `globalThis.__sm64touch`
   (`{ buttons, stickX, stickY }`, the usual N64 bit mask) and the game reads it

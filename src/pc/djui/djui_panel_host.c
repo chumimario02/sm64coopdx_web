@@ -149,7 +149,10 @@ void djui_panel_host_create(struct DjuiBase* caller) {
                 djui_base_set_size(&sInputboxPort->base, 0.45f, 32);
                 djui_base_set_alignment(&sInputboxPort->base, DJUI_HALIGN_RIGHT, DJUI_VALIGN_TOP);
 #ifdef TARGET_WEB
-                webnet_ensure_room_name();
+                // Nothing is filled in for you: the room is whatever you type
+                // (the last one you used is kept). An empty name is not valid
+                // (see djui_panel_host_port_valid), so no room is opened by
+                // accident.
                 djui_inputbox_set_text(sInputboxPort, gWebRoomName);
 #else
                 char portString[32] = { 0 };

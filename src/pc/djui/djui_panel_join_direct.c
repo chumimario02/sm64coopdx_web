@@ -187,10 +187,10 @@ static void djui_panel_join_direct_ip_text_set_new(void) {
 static void djui_panel_join_direct_ip_text_set(struct DjuiInputbox* inputbox1) {
     char buffer[256] = { 0 };
 #ifdef TARGET_WEB
-    // On the web the field is the ROOM NAME (there is no IP or port): we remember
-    // the last room you joined and, when there is none, we suggest the public room
-    // so that pressing Join twice is enough to get in.
-    snprintf(buffer, 256, "%s", (configJoinIp[0] != '\0') ? configJoinIp : webnet_public_room());
+    // On the web the field is the ROOM NAME (there is no IP or port). It starts
+    // empty on purpose: the room is the one you type, or the one you pick from
+    // the relay's room list. Nothing is filled in for you.
+    snprintf(buffer, 256, "%s", configJoinIp);
 #else
     if (strlen(configJoinIp) > 0 && configJoinPort != DEFAULT_PORT) {
         if (snprintf(buffer, 256, "%s:%d", configJoinIp, configJoinPort) < 0) { LOG_INFO("truncating IP"); }

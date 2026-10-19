@@ -91,6 +91,16 @@
   #cpad { display:grid; grid-template-columns:repeat(3, 10vmin); grid-template-rows:repeat(3, 10vmin); place-items:center; }
   #cpad .btn { width:9.5vmin; height:9.5vmin; font-size:2.6vmin; }
   #cpad span.lbl { color:#ffffff77; font-size:2.4vmin; font-weight:800; }
+  /* The D-pad (the cross on the left of an N64 pad, not the C buttons) sits
+     above the stick, out of the way of the thumb that is on it. */
+  #dpad { position:absolute; left:4vmin; bottom:43vmin; display:grid;
+          grid-template-columns:repeat(3, 8.5vmin); grid-template-rows:repeat(3, 8.5vmin); place-items:center; }
+  #dpad .btn { width:8vmin; height:8vmin; font-size:2.4vmin; }
+  #dpad span.lbl { color:#ffffff77; font-size:2.2vmin; font-weight:800; }
+  /* X and Y: buttons sm64coopdx added (they did not exist on the N64 pad).
+     Next to the D-pad, above the stick. 0x0040 and 0x0080. */
+  #xy { position:absolute; left:31vmin; bottom:44vmin; display:flex; gap:2.5vmin; }
+  #xy .btn { width:10.5vmin; height:10.5vmin; font-size:3.2vmin; }
   #rotate { position:fixed; left:50%; top:8px; transform:translateX(-50%); z-index:31; display:none; padding:8px 14px;
             border-radius:10px; background:#ffd23fe6; color:#10131a; font-weight:800; font-size:3.4vmin; pointer-events:none; }
   #rotate.visible { display:block; }
@@ -117,7 +127,7 @@
   </div>
 
   <div class="footer">Your ROM and your saves stay <b>in this browser only</b> (nothing is ever uploaded anywhere).<br>
-    Multiplayer: press <b>Create</b> to open the public room <b>coop01</b>, or <b>Join</b> to enter it — everyone who has this page can play together.</div>
+    Multiplayer: press <b>Create</b> to open a room and <b>Join</b> to enter one — everyone who has this page can play together.</div>
 </div>
 
 <button id="fullscreen" title="Fullscreen">⛶</button>
@@ -130,6 +140,15 @@
        aria-hidden="true" tabindex="-1">
 
 <div id="touchpad">
+  <div id="dpad">
+    <span></span><button class="btn" data-btn="up">▲</button><span></span>
+    <button class="btn" data-btn="left">◀</button><span class="lbl">D</span><button class="btn" data-btn="right">▶</button>
+    <span></span><button class="btn" data-btn="down">▼</button><span></span>
+  </div>
+  <div id="xy">
+    <button class="btn" data-btn="x" title="X (a sm64coopdx button)">X</button>
+    <button class="btn" data-btn="y" title="Y (a sm64coopdx button)">Y</button>
+  </div>
   <div id="stick"><i id="stickKnob"></i></div>
   <div id="extra">
     <button class="btn pill" id="chatBtn" title="Open or close the chat">💬 CHAT</button>
@@ -447,6 +466,8 @@ document.addEventListener('drop', function (e) {
 var TOUCH_STORE = 'sm64touch';
 var TOUCH_BITS = {
   a: 0x8000, b: 0x4000, z: 0x2000, start: 0x1000,
+  up: 0x0800, down: 0x0400, left: 0x0200, right: 0x0100,
+  x: 0x0040, y: 0x0080,
   cup: 0x0008, cdown: 0x0004, cleft: 0x0002, cright: 0x0001,
   l: 0x0020, r: 0x0010
 };

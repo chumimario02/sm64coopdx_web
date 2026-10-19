@@ -672,6 +672,14 @@ int main(int argc, char *argv[]) {
     }
     WEBBOOT(10); printf("[web-boot] 10 rom handler done\n"); fflush(stdout);
 
+#ifdef __EMSCRIPTEN__
+    // The mods' audio engine (miniaudio, Web Audio) can only be created once the
+    // browser allows audio, which is after the player pressed PLAY. Doing it here
+    // means the first mod sound is not delayed and any problem is logged.
+    void smlua_audio_utils_web_init(void);
+    smlua_audio_utils_web_init();
+#endif
+
     // start the thread for setting up the game
     bool threadSuccess = false;
     WEBBOOT(11); printf("[web-boot] 11 creating loading thread\n"); fflush(stdout);

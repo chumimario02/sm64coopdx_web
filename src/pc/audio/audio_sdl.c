@@ -38,6 +38,13 @@ static int audio_sdl_get_desired_buffered(void) {
 
 static void audio_sdl_play(const uint8_t *buf, size_t len) {
     if (audio_sdl_buffered() < 6000) {
+#ifdef TARGET_WEB
+        // The mods' audio (songs, sound effects) is mixed into the game's own
+        // output here: the browser build has a single audio queue / device, so
+        // miniaudio is pulled from this same callback (smlua_audio_utils.c).
+        extern void smlua_audio_web_mix(int16_t* samples, unsigned int frames);
+        smlua_audio_web_mix((int16_t*) buf, (unsigned int) (len / 4));
+#endif
         // Don't fill the audio buffer too much in case this happens
         SDL_QueueAudio(dev, buf, len);
     }
