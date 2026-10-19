@@ -348,16 +348,35 @@ function cleanPlayerName(value) {
 
 function updateNameHint() {
   var name = cleanPlayerName(elNameInput.value);
-  elNameHint.textContent = 'You will play as ';
+  elNameHint.textContent = romBundled ? 'Jugarás como ' : 'You will play as ';
   var b = document.createElement('b');
   b.textContent = name || 'Player';
   elNameHint.appendChild(b);
+}
+
+// The build that ships with the ROM is the private link: its page speaks
+// Spanish, while the shareable one (no ROM) stays in English.
+function applyNameLanguage() {
+  var title = elNameBox.querySelector('h2');
+  var desc = elNameBox.querySelector('p');
+  if (romBundled) {
+    title.textContent = 'Tu nombre';
+    desc.innerHTML = 'Escribe el nombre que verán los demás jugadores en la sala y en el chat.<br>' +
+      'Si lo dejas vacío jugarás como <b>Player</b>.';
+    elNameInput.placeholder = 'Tu nombre';
+  } else {
+    title.textContent = 'Your name';
+    desc.innerHTML = 'Type the name the other players will see in the room and in the chat.<br>' +
+      'Leave it empty to play as <b>Player</b>.';
+    elNameInput.placeholder = 'Your name';
+  }
 }
 
 function openNameBox() {
   if (started) { return; }
   if (!hasRom) { setRomStatus('You need to place your ROM before playing.', 'error'); return; }
   try { elNameInput.value = localStorage.getItem('sm64name') || ''; } catch (e) { elNameInput.value = ''; }
+  applyNameLanguage();
   updateNameHint();
   elNameBox.classList.add('on');
   setTimeout(function () { elNameInput.focus(); elNameInput.select(); }, 50);
