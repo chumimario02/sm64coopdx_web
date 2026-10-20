@@ -158,7 +158,10 @@
     var romBytes = readBundledRom(FS);
 
     // A build that carries the ROM is the private link: its page speaks Spanish.
-    if (romBytes && typeof sm64SetLanguage === 'function') { sm64SetLanguage('es'); }
+    if (romBytes && typeof sm64SetLanguage === 'function') {
+      globalThis.__sm64RomBuild = true;
+      sm64SetLanguage('es');
+    }
 
     try {
       if (!pathExists(FS, WRITE_DIR)) { FS.mkdirTree(WRITE_DIR); }

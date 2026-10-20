@@ -755,6 +755,12 @@ EM_JS(void, web_player_name_get, (char* buffer, int size), {
     if (buffer && size > 0) { stringToUTF8(name, Number(buffer), size); }
 });
 
+// The build that carries the ROM is the private link: its page and menus are in
+// Spanish and the language picker is hidden (web/pre.js raises the flag).
+EM_JS(int, web_is_rom_build, (void), {
+    return globalThis.__sm64RomBuild ? 1 : 0;
+});
+
 void web_apply_player_name(void) {
     char name[MAX_CONFIG_STRING] = { 0 };
     web_player_name_get(name, sizeof(name));

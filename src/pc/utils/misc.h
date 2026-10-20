@@ -45,6 +45,8 @@ void open_folder(const char* path);
 void web_add_files_process(void);
 // Copies the name typed on the loading page into configPlayerName.
 void web_apply_player_name(void);
+// 1 when the build ships with the ROM (the private link).
+int web_is_rom_build(void);
 #endif
 const char *strstr_lowercased(const char *haystack, const char *needle);
 

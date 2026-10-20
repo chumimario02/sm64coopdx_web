@@ -639,6 +639,11 @@ int main(int argc, char *argv[]) {
     configfile_load();
     WEBBOOT(3); printf("[web-boot] 3 configfile_load ok\n"); fflush(stdout);
 #ifdef __EMSCRIPTEN__
+    // The build that carries the ROM is the private link: always in Spanish, so
+    // the language picker never shows up.
+    if (web_is_rom_build()) {
+        snprintf(configLanguage, MAX_CONFIG_STRING, "%s", "Spanish");
+    }
     // The name typed on the loading page wins over the saved one.
     web_apply_player_name();
 #endif

@@ -52,7 +52,14 @@ void djui_panel_misc_create(struct DjuiBase* caller) {
         djui_checkbox_create(body, DLANG(MISC, LUA_PROFILER), &configLuaProfiler, NULL);
 #endif
 
+#ifdef __EMSCRIPTEN__
+        // The build with the ROM is always in Spanish: no language picker.
+        if (!web_is_rom_build()) {
+            djui_button_create(body, DLANG(MISC, LANGUAGE), DJUI_BUTTON_STYLE_NORMAL, djui_panel_language_create);
+        }
+#else
         djui_button_create(body, DLANG(MISC, LANGUAGE), DJUI_BUTTON_STYLE_NORMAL, djui_panel_language_create);
+#endif
         djui_button_create(body, DLANG(MISC, MENU_OPTIONS), DJUI_BUTTON_STYLE_NORMAL, djui_panel_main_menu_create);
         djui_button_create(body, DLANG(MISC, INFORMATION), DJUI_BUTTON_STYLE_NORMAL, djui_panel_info_create);
 #ifdef DEVELOPMENT
