@@ -235,13 +235,68 @@ var hasRom = false;
 var romBundled = false;
 var runtimeReady = false;
 
+// The build that ships with the ROM (the private link) shows the page in
+// Spanish; the shareable one without a ROM stays in English.
+var uiLang = 'en';
+function T(en, es) { return uiLang === 'es' ? es : en; }
+
 function setStatusText(text) { elStatus.textContent = text; }
 function setProgress(progress) { elBar.style.width = Math.round(100 * Math.max(0, Math.min(1, progress))) + '%'; }
-window.sm64Status  = function (text, progress) { if (text) { setStatusText(text); } if (typeof progress === 'number') { setProgress(progress); } };
-window.sm64Warning = function (text) { elWarning.textContent = text || ''; };
+window.sm64Status  = function (text, progress) { if (text) { setStatusText(translate(text)); } if (typeof progress === 'number') { setProgress(progress); } };
+window.sm64Warning = function (text) { elWarning.textContent = translate(text) || ''; };
+
+// Called from web/pre.js as soon as it knows whether the build carries the ROM.
+window.sm64SetLanguage = function (lang) {
+  var next = (lang === 'es') ? 'es' : 'en';
+  if (next === uiLang) { return; }
+  uiLang = next;
+  applyLanguage();
+};
+
+function applyLanguage() {
+  document.documentElement.lang = uiLang;
+
+  var sub = document.querySelector('#loading .sub');
+  if (sub) { sub.textContent = T('Web · Multiplayer', 'Web · Multijugador'); }
+
+  var footer = document.querySelector('#loading .footer');
+  if (footer) {
+    footer.innerHTML = T(
+      'Your ROM and your saves stay <b>in this browser only</b> (nothing is ever uploaded anywhere).<br>' +
+      'Multiplayer: press <b>Create</b> to open a room and <b>Join</b> to enter one — everyone who has this page can play together.',
+      'Tu ROM y tus partidas se quedan <b>solo en este navegador</b> (no se suben a ningún sitio).<br>' +
+      'Multijugador: pulsa <b>Create</b> para abrir una sala y <b>Join</b> para entrar en una.');
+  }
+
+  if (elTouchToggle) { elTouchToggle.title = T('On-screen controls for phones', 'Controles en pantalla para móviles'); }
+  elFullscreen.title = T('Fullscreen', 'Pantalla completa');
+
+  var rot = document.getElementById('rotate');
+  if (rot) { rot.textContent = T('↻ Rotate your phone to landscape', '↻ Gira el móvil a horizontal'); }
+
+  var chatBtn = document.getElementById('chatBtn');
+  if (chatBtn) { chatBtn.title = T('Open or close the chat', 'Abrir o cerrar el chat'); }
+  var sendBtn = document.getElementById('sendBtn');
+  if (sendBtn) { sendBtn.title = T('Send the message (the Enter key)', 'Enviar el mensaje (tecla Enter)'); }
+  var kbdBtn = document.getElementById('kbdBtn');
+  if (kbdBtn) { kbdBtn.title = T('Show the on-screen keyboard', 'Mostrar el teclado en pantalla'); }
+
+  var romButton = document.getElementById('romButton');
+  if (romButton) { romButton.textContent = T('📁 Choose my ROM…', '📁 Elegir mi ROM…'); }
+
+  // Refresh whatever was written in the other language already.
+  if (typeof touchSetEnabled === 'function') { touchSetEnabled(touchEnabled); }
+  if (typeof updateNameHint === 'function') { updateNameHint(); }
+  if (runtimeReady) {
+    if (hasRom) { setStatusText(T('All set. Press PLAY.', 'Todo listo. Pulsa PLAY.')); }
+    else { setStatusText(T('Your ROM is missing: place it below to play.', 'Falta tu ROM: ponla abajo para jugar.')); }
+  } else {
+    setStatusText(translate(elStatus.textContent));
+  }
+}
 
 function setRomStatus(text, className) {
-  elRomStatus.textContent = text || '';
+  elRomStatus.textContent = translate(text) || '';
   elRomStatus.className = className || '';
 }
 
@@ -250,6 +305,7 @@ window.sm64RomInfo = function (info) {
   hasRom = !!(info && info.hasRom);
   var bundled = !!(info && info.bundled);
   romBundled = bundled;
+  if (bundled) { window.sm64SetLanguage('es'); }
   if (hasRom && bundled) {
     // The build already carries the ROM: there is nothing to place or replace,
     // so the panel stays out of the way.
@@ -261,15 +317,21 @@ window.sm64RomInfo = function (info) {
   }
   if (hasRom) {
     elRom.className = 'ok';
-    elRomTitle.innerHTML = '<span class="ok">ROM ready ✓</span>';
-    elRomText.innerHTML = 'Your ROM is ready' + (info.source ? ' (' + info.source + ')' : '') +
-      ' and it stays saved in this browser. Place another one here if you want to use a different ROM.';
-    setRomStatus('Saved in this browser. You only need to do this once.', 'ok');
+    elRomTitle.innerHTML = T('<span class="ok">ROM ready ✓</span>', '<span class="ok">ROM lista ✓</span>');
+    elRomText.innerHTML = T(
+      'Your ROM is ready' + (info.source ? ' (' + info.source + ')' : '') +
+        ' and it stays saved in this browser. Place another one here if you want to use a different ROM.',
+      'Tu ROM está lista' + (info.source ? ' (' + info.source + ')' : '') +
+        ' y queda guardada en este navegador. Pon otra aquí si quieres usar una ROM distinta.');
+    setRomStatus(T('Saved in this browser. You only need to do this once.', 'Guardada en este navegador. Solo tienes que hacerlo una vez.'), 'ok');
   } else {
     elRom.className = 'ask';
-    elRomTitle.innerHTML = '<span class="ask">1) Place your ROM</span>';
-    elRomText.innerHTML = 'You need your own copy of <b>Super Mario 64 (USA)</b> as a <code>.z64</code> file' +
-      ' (<code>.n64</code>/<code>.v64</code> work too: we convert them for you).';
+    elRomTitle.innerHTML = T('<span class="ask">1) Place your ROM</span>', '<span class="ask">1) Pon tu ROM</span>');
+    elRomText.innerHTML = T(
+      'You need your own copy of <b>Super Mario 64 (USA)</b> as a <code>.z64</code> file' +
+        ' (<code>.n64</code>/<code>.v64</code> work too: we convert them for you).',
+      'Necesitas tu propia copia de <b>Super Mario 64 (USA)</b> en un archivo <code>.z64</code>' +
+        ' (también valen <code>.n64</code>/<code>.v64</code>: los convertimos por ti).');
     if (!elRomStatus.textContent) { setRomStatus('You can also drag the file here.'); }
   }
   refreshPlay();
@@ -278,25 +340,67 @@ window.sm64RomInfo = function (info) {
 // Everything loaded (wasm + data + saved files read): the only thing left is pressing PLAY.
 window.sm64Ready = function () {
   runtimeReady = true;
-  if (!hasRom) { setStatusText('Your ROM is missing: place it below to play.'); return; }
+  if (!hasRom) { setStatusText(translate('Your ROM is missing: place it below to play.')); return; }
   setProgress(1);
-  setStatusText('All set. Press PLAY.');
+  setStatusText(translate('All set. Press PLAY.'));
   refreshPlay();
 };
 
 function refreshPlay() {
   if (runtimeReady && hasRom) {
     setProgress(1);
-    setStatusText('All set. Press PLAY.');
+    setStatusText(translate('All set. Press PLAY.'));
     elPlay.classList.add('visible');
   } else {
     elPlay.classList.remove('visible');
   }
 }
 
-// Emscripten already prints its messages in English.
+// Emscripten and pre.js print their messages in English. The private build (the
+// one that carries the ROM) shows them in Spanish; the shareable one stays in
+// English, so nothing changes for other players.
+var ES_TEXT = {
+  'Loading the game…': 'Cargando el juego…',
+  'Downloading data...': 'Descargando datos…',
+  'Downloading data…': 'Descargando datos…',
+  'Reading your saved games, mods and settings…': 'Leyendo tus partidas, mods y ajustes…',
+  'All set. Press PLAY.': 'Todo listo. Pulsa PLAY.',
+  'Your ROM is missing: place it below to play.': 'Falta tu ROM: ponla abajo para jugar.',
+  'You can also drag the file here.': 'También puedes arrastrar el archivo aquí.',
+  'You need to place your ROM before playing.': 'Tienes que poner tu ROM antes de jugar.',
+  'Browser storage is not ready yet; wait a moment and try again.':
+    'El almacenamiento del navegador aún no está listo; espera un momento y prueba otra vez.',
+  'Warning: no filesystem; this session cannot be saved.':
+    'Aviso: no hay sistema de archivos; esta sesión no se podrá guardar.',
+  'Warning: this browser does not support saved data (IndexedDB).':
+    'Aviso: este navegador no permite guardar datos (IndexedDB).',
+  'Could not read the file.': 'No se pudo leer el archivo.',
+  'That file does not look like a Nintendo 64 ROM (unrecognised header).':
+    'Ese archivo no parece una ROM de Nintendo 64 (cabecera desconocida).',
+  'Checking that it is Super Mario 64 (USA).': 'Comprobando que es Super Mario 64 (USA).',
+  'Saving in your browser.': 'Guardando en tu navegador.'
+};
+
 function translate(text) {
-  return text;
+  if (uiLang !== 'es' || !text) { return text; }
+  var s = String(text);
+  if (ES_TEXT[s]) { return ES_TEXT[s]; }
+
+  var m = /^Preparing… \((\d+)\)$/.exec(s);
+  if (m) { return 'Preparando… (' + m[1] + ')'; }
+
+  if (s.indexOf('Downloading data') === 0) { return s.replace('Downloading data', 'Descargando datos'); }
+  if (s.indexOf('Reading ') === 0) { return s.replace('Reading ', 'Leyendo '); }
+  if (s.indexOf('ROM saved') === 0) { return s.replace('ROM saved', 'ROM guardada'); }
+  if (s.indexOf('Could not save the ROM: ') === 0) { return s.replace('Could not save the ROM: ', 'No se pudo guardar la ROM: '); }
+  if (s.indexOf('Error processing the ROM: ') === 0) { return s.replace('Error processing the ROM: ', 'Error procesando la ROM: '); }
+  if (s.indexOf('Warning: could not read your saved data') === 0) {
+    return s.replace('Warning: could not read your saved data', 'Aviso: no se pudieron leer tus datos guardados');
+  }
+  if (s.indexOf('Warning: saved data could not be enabled') === 0) {
+    return s.replace('Warning: saved data could not be enabled', 'Aviso: no se pudo activar el guardado');
+  }
+  return s;
 }
 
 // Browsers require a user gesture for audio: we take advantage of the click.
@@ -348,7 +452,7 @@ function cleanPlayerName(value) {
 
 function updateNameHint() {
   var name = cleanPlayerName(elNameInput.value);
-  elNameHint.textContent = romBundled ? 'Jugarás como ' : 'You will play as ';
+  elNameHint.textContent = (uiLang === 'es') ? 'Jugarás como ' : 'You will play as ';
   var b = document.createElement('b');
   b.textContent = name || 'Player';
   elNameHint.appendChild(b);
@@ -359,7 +463,7 @@ function updateNameHint() {
 function applyNameLanguage() {
   var title = elNameBox.querySelector('h2');
   var desc = elNameBox.querySelector('p');
-  if (romBundled) {
+  if (uiLang === 'es') {
     title.textContent = 'Tu nombre';
     desc.innerHTML = 'Escribe el nombre que verán los demás jugadores en la sala y en el chat.<br>' +
       'Si lo dejas vacío jugarás como <b>Player</b>.';
@@ -586,7 +690,16 @@ var elKnob        = document.getElementById('stickKnob');
 var elRotate      = document.getElementById('rotate');
 
 var touchEnabled = false;
-try { touchEnabled = localStorage.getItem(TOUCH_STORE) === '1'; } catch (e) {}
+var touchSaved = null;
+try { touchSaved = localStorage.getItem(TOUCH_STORE); } catch (e) {}
+if (touchSaved === '1') {
+  touchEnabled = true;
+} else if (touchSaved === '0') {
+  touchEnabled = false;
+} else {
+  // First visit: the pad is on for phones and tablets, off on a desktop.
+  touchEnabled = (navigator.maxTouchPoints || 0) > 0 || ('ontouchstart' in window);
+}
 
 function touchReleaseAll() {
   touchPad.buttons = 0;
@@ -607,7 +720,9 @@ function touchSetEnabled(on) {
   try { localStorage.setItem(TOUCH_STORE, touchEnabled ? '1' : '0'); } catch (e) {}
   elTouchPad.className = touchEnabled ? 'visible' : '';
   elTouchToggle.className = touchEnabled ? 'on' : '';
-  elTouchToggle.textContent = touchEnabled ? '🎮 Touch: ON' : '🎮 Touch controls';
+  elTouchToggle.textContent = touchEnabled
+    ? T('🎮 Touch: ON', '🎮 Táctil: ON')
+    : T('🎮 Touch controls', '🎮 Controles');
   if (!touchEnabled) { touchReleaseAll(); kbdShow(false); }
   touchCheckRotate();
 }
@@ -835,7 +950,7 @@ var Module = {
     else { setStatusText(translate(t)); }
   },
   monitorRunDependencies: function (left) {
-    if (left > 0) { setStatusText('Preparing… (' + left + ')'); }
+    if (left > 0) { setStatusText(translate('Preparing… (' + left + ')')); }
   }
 };
 window.Module = Module;
