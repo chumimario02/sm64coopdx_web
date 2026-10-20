@@ -698,7 +698,13 @@ if (touchSaved === '1') {
   touchEnabled = false;
 } else {
   // First visit: the pad is on for phones and tablets, off on a desktop.
-  touchEnabled = (navigator.maxTouchPoints || 0) > 0 || ('ontouchstart' in window);
+  // (`'ontouchstart' in window` is true even in desktop Chrome, so it is not
+  // enough on its own: check the touch points and the device itself.)
+  var touchPoints = (navigator.maxTouchPoints || 0) > 0;
+  var mobileUA = /Android|iPhone|iPad|iPod|Mobile|Tablet/i.test(navigator.userAgent || '');
+  var coarsePointer = false;
+  try { coarsePointer = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches); } catch (e) {}
+  touchEnabled = touchPoints && (mobileUA || coarsePointer);
 }
 
 function touchReleaseAll() {
